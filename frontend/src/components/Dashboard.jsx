@@ -125,7 +125,7 @@ function ServerCard({ server, onClick }) {
   )
 }
 
-function DetailPanel({ item, type, onClose, latencyHistory }) {
+function DetailPanel({ item, type, onClose, latencyHistory, statusHistory }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -160,7 +160,7 @@ function DetailPanel({ item, type, onClose, latencyHistory }) {
         {item && (
           <div className="p-6 space-y-6">
             {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} />}
-            {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} />}
+            {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} statusHistory={statusHistory} />}
             {type === 'container' && <ContainerDetail item={item} />}
             {type === 'system' && <SystemDetail stats={item} />}
           </div>
@@ -331,9 +331,9 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function ServiceDetail({ item, latencyHistory }) {
-  const uptimePct = latencyHistory && latencyHistory.length > 0
-    ? Math.round((latencyHistory.length / 30) * 100) : null
+function ServiceDetail({ item, latencyHistory, statusHistory }) {
+  const uptimePct = statusHistory && statusHistory.length > 0
+    ? Math.round((statusHistory.filter(Boolean).length / statusHistory.length) * 100) : null
   const minLat = latencyHistory && latencyHistory.length > 0
     ? Math.min(...latencyHistory) : null
   const maxLat = latencyHistory && latencyHistory.length > 0
@@ -559,6 +559,7 @@ export default function Dashboard() {
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
   const latencyHistoryRef = useRef({})
+  const statusHistoryRef = useRef({})
 
   const toggleTheme = () => {
     const next = !dark
@@ -588,18 +589,24 @@ export default function Dashboard() {
       setSystemStats(sys)
 
       const newHistory = { ...latencyHistoryRef.current }
+      const newStatusHistory = { ...statusHistoryRef.current }
       for (const item of [...srv, ...svc]) {
-        if (!item.latency) continue
         if (!newHistory[item.name]) newHistory[item.name] = []
+        if (!newStatusHistory[item.name]) newStatusHistory[item.name] = []
         const val = parseInt(item.latency, 10)
         if (!isNaN(val)) {
           newHistory[item.name].push(val)
-          if (newHistory[item.name].length > 30) {
-            newHistory[item.name].shift()
-          }
+        }
+        if (newHistory[item.name].length > 30) {
+          newHistory[item.name].shift()
+        }
+        newStatusHistory[item.name].push(item.status === 'up')
+        if (newStatusHistory[item.name].length > 30) {
+          newStatusHistory[item.name].shift()
         }
       }
       latencyHistoryRef.current = newHistory
+      statusHistoryRef.current = newStatusHistory
 
       setError(null)
     } catch (e) {
@@ -808,6 +815,7 @@ export default function Dashboard() {
         type={panel?.type}
         onClose={() => setPanel(null)}
         latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
+        statusHistory={statusHistoryRef.current[panel?.item?.name]}
       />
     </div>
   )
