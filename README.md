@@ -60,8 +60,14 @@ services:
       - "9876:9876"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - homelab-monitor-data:/app/data
     restart: unless-stopped
+
+volumes:
+  homelab-monitor-data:
 ```
+
+> **Important:** The `homelab-monitor-data` volume persists services you add via the UI. Without it, all added services are lost when the container is recreated.
 
 ## Configuration
 
@@ -165,7 +171,8 @@ Every push to `main`/`master` builds a new `latest` image for `linux/amd64` and 
 
 ## Environment Variables
 
-| Variable      | Default           | Description                      |
-|---------------|-------------------|----------------------------------|
-| `CONFIG_PATH` | `/app/config.yaml`| Path to the configuration file   |
-| `STATIC_DIR`  | `/app/static`     | Path to the frontend static files|
+| Variable      | Default                          | Description                                |
+|---------------|----------------------------------|--------------------------------------------|
+| `CONFIG_PATH` | `/app/config.yaml`               | Path to the configuration file             |
+| `STATIC_DIR`  | `/app/static`                    | Path to the frontend static files          |
+| `DATA_PATH`   | `/app/data/extra_services.json`  | Path to persist UI-added services          |
