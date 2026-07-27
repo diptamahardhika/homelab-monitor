@@ -1,6 +1,6 @@
 services:
   monitor:
-    image: ghcr.io/pradiptamahardika/homelab-monitor:latest
+    image: ghcr.io/diptamahardhika/homelab-monitor:latest
     # build: .                          # uncomment to build locally instead
     container_name: homelab-monitor
     ports:

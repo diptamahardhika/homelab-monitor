@@ -42,7 +42,7 @@ docker run -d \
   --name homelab-monitor \
   -p 9876:9876 \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  ghcr.io/pradiptamahardika/homelab-monitor:latest
+  ghcr.io/diptamahardhika/homelab-monitor:latest
 ```
 
 Open **http://localhost:9876** (production) or **http://localhost:5173** (development)
@@ -54,7 +54,7 @@ Paste this into the Portainer stack editor:
 ```yaml
 services:
   monitor:
-    image: ghcr.io/pradiptamahardika/homelab-monitor:latest
+    image: ghcr.io/diptamahardhika/homelab-monitor:latest
     container_name: homelab-monitor
     ports:
       - "9876:9876"
@@ -157,8 +157,8 @@ docker run -p 9876:9876 \
 Images are published automatically to **GHCR**:
 
 ```
-ghcr.io/pradiptamahardika/homelab-monitor:latest
-ghcr.io/pradiptamahardika/homelab-monitor:v0.1.0
+ghcr.io/diptamahardhika/homelab-monitor:latest
+ghcr.io/diptamahardhika/homelab-monitor:v0.1.0
 ```
 
 Every push to `main`/`master` builds a new `latest` image for `linux/amd64` and `linux/arm64`. Tagged releases (`v*`) are also published with semver tags.
