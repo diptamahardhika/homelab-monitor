@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"context"
-	"encoding/binary"
 	"math"
 	"os"
 	"runtime"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/client"
-	"golang.org/x/sys/unix"
 )
 
 type SystemStats struct {
@@ -137,25 +135,6 @@ func readCPUStat() (idle uint64, total uint64) {
 	return 0, 0
 }
 
-func getMacCPUUsage() float64 {
-	raw, err := unix.SysctlRaw("vm.loadavg")
-	if err != nil || len(raw) < 12 {
-		return 0
-	}
-	// fixpt_t values divided by FSCALE (2048) give load averages
-	ldavg := int32(binary.LittleEndian.Uint32(raw[0:4]))
-	load1 := float64(ldavg) / 2048.0
-	cpus := runtime.NumCPU()
-	if cpus <= 0 {
-		return 0
-	}
-	pct := (load1 / float64(cpus)) * 100
-	if pct > 100 {
-		pct = 100
-	}
-	return toFixed(pct, 1)
-}
-
 func readMemInfo() (totalKB uint64, availKB uint64) {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
@@ -173,38 +152,6 @@ func readMemInfo() (totalKB uint64, availKB uint64) {
 				availKB, _ = strconv.ParseUint(fields[1], 10, 64)
 			}
 		}
-	}
-	return
-}
-
-func readMacMemInfo() (totalKB uint64, freeKB uint64) {
-	totalBytes, err := unix.SysctlUint64("hw.memsize")
-	if err != nil || totalBytes == 0 {
-		return 0, 0
-	}
-	totalKB = totalBytes / 1024
-
-	pageSize, err := unix.SysctlUint64("hw.pagesize")
-	if err != nil || pageSize == 0 {
-		pageSize = 16384
-	}
-
-	freeRaw, err := unix.SysctlRaw("vm.page_free_count")
-	if err != nil || len(freeRaw) < 4 {
-		return totalKB, totalKB / 2
-	}
-	freePages := uint64(binary.LittleEndian.Uint32(freeRaw[0:4]))
-
-	specRaw, err := unix.SysctlRaw("vm.page_speculative_count")
-	if err == nil && len(specRaw) >= 4 {
-		specPages := uint64(binary.LittleEndian.Uint32(specRaw[0:4]))
-		freePages += specPages
-	}
-
-	freeBytes := freePages * pageSize
-	freeKB = freeBytes / 1024
-	if freeKB > totalKB {
-		freeKB = totalKB / 2
 	}
 	return
 }
@@ -230,16 +177,6 @@ func readUptime() string {
 		}
 	}
 	return readMacUptime()
-}
-
-func readMacUptime() string {
-	raw, err := unix.SysctlRaw("kern.boottime")
-	if err != nil || len(raw) < 16 {
-		return ""
-	}
-	sec := int64(binary.LittleEndian.Uint64(raw[0:8]))
-	boot := time.Unix(sec, 0)
-	return formatDuration(time.Since(boot))
 }
 
 func formatDuration(d time.Duration) string {
