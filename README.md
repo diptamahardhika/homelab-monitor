@@ -26,21 +26,49 @@ homelab-monitor/
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
+├── .github/workflows/ # CI — builds & pushes image to GHCR
 ├── config.yaml        # user configuration
 ├── Dockerfile         # multi-stage build (frontend → Go → alpine runtime)
 ├── docker-compose.yml # one-command deploy
 └── README.md
 ```
 
-## Quick Start
+## Quick Start (recommended)
 
 ```bash
-docker compose up -d
+docker run -d \
+  --name homelab-monitor \
+  -p 9876:9876 \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  ghcr.io/pradiptamahardika/homelab-monitor:latest
 ```
 
 Open **http://localhost:9876**
 
+### Portainer (docker-compose stack)
+
+Paste this into the Portainer stack editor:
+
+```yaml
+services:
+  monitor:
+    image: ghcr.io/pradiptamahardika/homelab-monitor:latest
+    container_name: homelab-monitor
+    ports:
+      - "9876:9876"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+```
+
 ## Configuration
+
+The image ships with a default `config.yaml` so it works out of the box. To customize, mount your own:
+
+```yaml
+volumes:
+  - ./config.yaml:/app/config.yaml:ro
+```
 
 Edit `config.yaml` to define which servers and services to monitor:
 
@@ -118,6 +146,17 @@ docker run -p 9876:9876 \
   -v ./config.yaml:/app/config.yaml:ro \
   homelab-monitor
 ```
+
+## Pre-built Images
+
+Images are published automatically to **GHCR**:
+
+```
+ghcr.io/pradiptamahardika/homelab-monitor:latest
+ghcr.io/pradiptamahardika/homelab-monitor:v0.1.0
+```
+
+Every push to `main`/`master` builds a new `latest` image for `linux/amd64` and `linux/arm64`. Tagged releases (`v*`) are also published with semver tags.
 
 ## Environment Variables
 
