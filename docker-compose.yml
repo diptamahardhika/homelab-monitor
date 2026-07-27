@@ -7,6 +7,10 @@ services:
       - "9876:9876"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      - homelab-monitor-data:/app/data
       # mount your config.yaml to override defaults:
       # - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped
+
+volumes:
+  homelab-monitor-data:
