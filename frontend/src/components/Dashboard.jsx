@@ -231,12 +231,15 @@ function SystemDetail({ stats }) {
   )
 }
 
-function DetailRow({ label, value, mono }) {
+function DetailRow({ label, value, mono, href }) {
   if (value === undefined || value === null || value === '') return null
+  const content = href
+    ? <a href={href} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2 transition-colors">{value}</a>
+    : value
   return (
     <div className="flex justify-between items-start gap-4 py-2 border-b border-gray-100 dark:border-gray-800/50 last:border-0">
       <span className="text-sm text-gray-500 shrink-0">{label}</span>
-      <span className={`text-sm text-gray-900 dark:text-white text-right max-w-[60%] break-all ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
+      <span className={`text-sm text-gray-900 dark:text-white text-right max-w-[60%] break-all ${mono ? 'font-mono text-xs' : ''}`}>{content}</span>
     </div>
   )
 }
@@ -267,7 +270,7 @@ function ServiceDetail({ item, latencyHistory }) {
         <span className="text-sm text-gray-500">{item.status === 'up' ? 'Healthy' : item.status === 'down' ? 'Down' : 'Degraded'}</span>
       </div>
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
-        <DetailRow label="URL" value={item.url} mono />
+        <DetailRow label="URL" value={item.url} mono href={item.url} />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Status Code" value={item.status_code} />
         <DetailRow label="Latency" value={item.latency} />
