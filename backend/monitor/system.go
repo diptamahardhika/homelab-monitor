@@ -3,10 +3,12 @@ package monitor
 import (
 	"context"
 	"math"
+	"net"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,7 +30,17 @@ type SystemStats struct {
 	DiskUsedGB        uint64  `json:"disk_used_gb"`
 	DiskFreeGB        uint64  `json:"disk_free_gb"`
 	DiskUsedPercent   float64 `json:"disk_used_percent"`
+	NetworkRXSpeed    float64 `json:"network_rx_speed"`
+	NetworkTXSpeed    float64 `json:"network_tx_speed"`
+	IPAddress         string  `json:"ip_address"`
 }
+
+var (
+	prevNetMu    sync.Mutex
+	prevNetRX    uint64
+	prevNetTX    uint64
+	prevNetTime  time.Time
+)
 
 func GetSystemStats(ctx context.Context) *SystemStats {
 	stats := &SystemStats{
@@ -81,6 +93,12 @@ func GetSystemStats(ctx context.Context) *SystemStats {
 
 	stats.Uptime = readUptime()
 
+	rxSpeed, txSpeed := getNetworkSpeed()
+	stats.NetworkRXSpeed = rxSpeed
+	stats.NetworkTXSpeed = txSpeed
+
+	stats.IPAddress = getIPAddress()
+
 	return stats
 }
 
@@ -90,6 +108,73 @@ func getHostname() string {
 		return "unknown"
 	}
 	return h
+}
+
+func getIPAddress() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
+func getNetworkSpeed() (rxBytesPerSec float64, txBytesPerSec float64) {
+	data, err := os.ReadFile("/proc/net/dev")
+	if err != nil {
+		return 0, 0
+	}
+
+	var rx, tx uint64
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+		iface := strings.TrimRight(fields[0], ":")
+		if iface == "lo" || iface == "lo0" {
+			continue
+		}
+		rx, _ = strconv.ParseUint(fields[1], 10, 64)
+		tx, _ = strconv.ParseUint(fields[9], 10, 64)
+		break
+	}
+
+	now := time.Now()
+	prevNetMu.Lock()
+	if !prevNetTime.IsZero() && now.After(prevNetTime) {
+		elapsed := now.Sub(prevNetTime).Seconds()
+		if elapsed > 0 && rx >= prevNetRX && tx >= prevNetTX {
+			rxBytesPerSec = float64(rx-prevNetRX) / elapsed
+			txBytesPerSec = float64(tx-prevNetTX) / elapsed
+		}
+	}
+	prevNetRX = rx
+	prevNetTX = tx
+	prevNetTime = now
+	prevNetMu.Unlock()
+
+	return
 }
 
 func getCPUUsage() float64 {

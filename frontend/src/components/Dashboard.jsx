@@ -192,6 +192,13 @@ function Bar({ value, label, valueLabel, color, total }) {
   )
 }
 
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0) return '0 B/s'
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(1)} B/s`
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(2)} MB/s`
+}
+
 function SystemDetail({ stats }) {
   if (!stats) return null
 
@@ -222,6 +229,26 @@ function SystemDetail({ stats }) {
         />
       </div>
 
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Network</h3>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+              <span className="text-sm text-gray-500">Download</span>
+            </div>
+            <span className="text-sm font-mono text-gray-900 dark:text-white">{formatSpeed(stats.network_rx_speed)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+              <span className="text-sm text-gray-500">Upload</span>
+            </div>
+            <span className="text-sm font-mono text-gray-900 dark:text-white">{formatSpeed(stats.network_tx_speed)}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Details</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -244,6 +271,10 @@ function SystemDetail({ stats }) {
           <div>
             <p className="text-xs text-gray-500">CPU Cores</p>
             <p className="text-sm text-gray-900 dark:text-white">{stats.cpu_count}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">IP Address</p>
+            <p className="text-sm font-mono text-gray-900 dark:text-white truncate">{stats.ip_address || '-'}</p>
           </div>
         </div>
       </div>
