@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -82,10 +83,10 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 	return status
 }
 
-func CheckService(ctx context.Context, name, url string, checkType string) ServiceStatus {
+func CheckService(ctx context.Context, name, rawURL string, checkType string) ServiceStatus {
 	status := ServiceStatus{
 		Name: name,
-		URL:  url,
+		URL:  rawURL,
 		Type: checkType,
 	}
 
@@ -94,14 +95,16 @@ func CheckService(ctx context.Context, name, url string, checkType string) Servi
 	switch checkType {
 	case "http":
 		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Get(url)
+		resp, err := client.Get(rawURL)
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"
 			status.Error = err.Error()
 			return status
 		}
-		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		status.ResponseSize = int64(len(body))
 		status.StatusCode = resp.StatusCode
 		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			status.Status = "up"
@@ -110,8 +113,20 @@ func CheckService(ctx context.Context, name, url string, checkType string) Servi
 		}
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
+		if host := resp.Request.URL.Hostname(); host != "" {
+			if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
+				status.ResolvedIP = ips[0]
+			}
+		}
+
 	case "tcp":
-		conn, err := net.DialTimeout("tcp", url, 5*time.Second)
+		host, _, err := net.SplitHostPort(rawURL)
+		if err == nil {
+			if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
+				status.ResolvedIP = ips[0]
+			}
+		}
+		conn, err := net.DialTimeout("tcp", rawURL, 5*time.Second)
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"
@@ -122,6 +137,8 @@ func CheckService(ctx context.Context, name, url string, checkType string) Servi
 		status.Status = "up"
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 	}
+
+	status.LastChecked = time.Now().UTC().Format(time.RFC3339)
 
 	return status
 }

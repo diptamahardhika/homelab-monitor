@@ -313,18 +313,61 @@ function ServerDetail({ item, latencyHistory }) {
   )
 }
 
+function formatTime(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = (now - d) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function formatBytes(n) {
+  if (!n || n <= 0) return null
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function ServiceDetail({ item, latencyHistory }) {
+  const uptimePct = latencyHistory && latencyHistory.length > 0
+    ? Math.round((latencyHistory.length / 30) * 100) : null
+  const minLat = latencyHistory && latencyHistory.length > 0
+    ? Math.min(...latencyHistory) : null
+  const maxLat = latencyHistory && latencyHistory.length > 0
+    ? Math.max(...latencyHistory) : null
+  const avgLat = latencyHistory && latencyHistory.length > 0
+    ? Math.round(latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length) : null
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <StatusBadge status={item.status} />
         <span className="text-sm text-gray-500">{item.status === 'up' ? 'Healthy' : item.status === 'down' ? 'Down' : 'Degraded'}</span>
+        {uptimePct !== null && (
+          <span className="ml-auto text-xs font-medium text-gray-400">
+            {uptimePct}% uptime
+          </span>
+        )}
       </div>
+      {latencyHistory && latencyHistory.length > 0 && (
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span>min <strong className="text-gray-300">{minLat}ms</strong></span>
+          <span>avg <strong className="text-gray-300">{avgLat}ms</strong></span>
+          <span>max <strong className="text-gray-300">{maxLat}ms</strong></span>
+          <span className="ml-auto">{latencyHistory.length}/30 polls</span>
+        </div>
+      )}
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
         <DetailRow label="URL" value={item.url} mono href={item.url} />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Status Code" value={item.status_code} />
         <DetailRow label="Latency" value={item.latency} />
+        <DetailRow label="Resolved IP" value={item.resolved_ip} mono />
+        {formatBytes(item.response_size) && <DetailRow label="Response Size" value={formatBytes(item.response_size)} />}
+        {formatTime(item.last_checked) && <DetailRow label="Last Checked" value={formatTime(item.last_checked)} />}
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
       {latencyHistory && <LatencySparkline history={latencyHistory} />}
