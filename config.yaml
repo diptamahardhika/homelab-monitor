@@ -1,0 +1,12 @@
+port: 9876
+
+servers:
+  - name: Localhost
+    host: 127.0.0.1
+    port: 22
+    type: tcp
+
+services:
+  - name: Example HTTP
+    url: https://example.com
+    type: http

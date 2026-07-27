@@ -1,0 +1,71 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/pradiptamahardika/homelab-monitor/config"
+	"github.com/pradiptamahardika/homelab-monitor/handlers"
+)
+
+func main() {
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "/app/config.yaml"
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
+
+	h := handlers.New(cfg)
+
+	r := chi.NewRouter()
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	r.Route("/api", func(r chi.Router) {
+		r.Get("/health", h.Health)
+		r.Get("/servers", h.Servers)
+		r.Get("/services", h.Services)
+		r.Post("/services", h.AddService)
+		r.Delete("/services/{name}", h.DeleteService)
+		r.Get("/docker", h.DockerContainers)
+		r.Get("/docker/{id}", h.DockerContainerDetail)
+	})
+
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = "/app/static"
+	}
+
+	absStatic, err := filepath.Abs(staticDir)
+	if err == nil {
+		if info, err := os.Stat(absStatic); err == nil && info.IsDir() {
+			log.Printf("serving static files from %s", absStatic)
+			fileServer := http.FileServer(http.Dir(absStatic))
+			r.Handle("/*", fileServer)
+		}
+	}
+
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	log.Printf("starting server on %s", addr)
+	if err := http.ListenAndServe(addr, r); err != nil {
+		log.Fatal(err)
+	}
+}

@@ -1,0 +1,10 @@
+services:
+  monitor:
+    build: .
+    container_name: homelab-monitor
+    ports:
+      - "9876:9876"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
