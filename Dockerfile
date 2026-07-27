@@ -21,7 +21,7 @@ WORKDIR /app
 
 COPY --from=backend /app/homelab-monitor .
 COPY --from=frontend /build/dist ./static
-COPY config.yaml .
+COPY config.yaml /app/config.yaml
 
 EXPOSE 9876
 CMD ["./homelab-monitor"]
