@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
 
@@ -52,9 +52,9 @@ func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 		return nil, err
 	}
 
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
-		return nil, err
+		return []DockerContainer{}, nil
 	}
 
 	result := make([]DockerContainer, 0, len(containers))
@@ -105,7 +105,7 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 		return nil, err
 	}
 
-	detail, err := cli.ContainerInspect(ctx, containerID)
+	detail, _, err := cli.ContainerInspectWithRaw(ctx, containerID, false)
 	if err != nil {
 		return nil, err
 	}

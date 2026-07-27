@@ -459,9 +459,9 @@ export default function Dashboard() {
         fetch('/api/docker').then(r => r.json()),
         fetch('/api/system').then(r => r.json()),
       ])
-      setServers(srv)
-      setServices(svc)
-      setContainers(dock)
+      setServers(Array.isArray(srv) ? srv : [])
+      setServices(Array.isArray(svc) ? svc : [])
+      setContainers(Array.isArray(dock) ? dock : [])
       setSystemStats(sys)
 
       const newHistory = { ...latencyHistoryRef.current }

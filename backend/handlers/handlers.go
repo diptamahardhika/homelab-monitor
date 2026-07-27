@@ -117,7 +117,7 @@ func (h *Handler) DockerContainers(w http.ResponseWriter, r *http.Request) {
 	containers, err := monitor.GetDockerContainers(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		json.NewEncoder(w).Encode([]struct{}{})
 		return
 	}
 
