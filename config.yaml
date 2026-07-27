@@ -2,7 +2,9 @@ port: 9876
 
 servers:
   - name: Localhost
-    host: 127.0.0.1
+    # Use host.docker.internal to reach the host machine from inside the container.
+    # On Linux, add `extra_hosts: - "host.docker.internal:host-gateway"` to your compose service.
+    host: host.docker.internal
     port: 22
     type: tcp
 
