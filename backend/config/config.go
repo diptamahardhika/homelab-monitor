@@ -11,6 +11,7 @@ type Server struct {
 	Host    string `yaml:"host"`
 	Port    int    `yaml:"port"`
 	Type    string `yaml:"type"`
+	Gateway string `yaml:"gateway"`
 }
 
 type Service struct {

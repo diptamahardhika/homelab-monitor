@@ -52,7 +52,11 @@ func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]monitor.ServerStatus, len(h.cfg.Servers))
 	for i, s := range h.cfg.Servers {
-		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type)
+		dialHost := ""
+		if s.Gateway == "docker" {
+			dialHost = monitor.GetDockerGatewayIP(ctx)
+		}
+		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, dialHost)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

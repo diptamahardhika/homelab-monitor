@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 )
 
@@ -52,6 +53,28 @@ type DockerContainerDetail struct {
 
 func getClient() (*client.Client, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+}
+
+func GetDockerGatewayIP(ctx context.Context) string {
+	if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
+		return ""
+	}
+
+	cli, err := getClient()
+	if err != nil {
+		return ""
+	}
+	defer cli.Close()
+
+	net, err := cli.NetworkInspect(ctx, "bridge", network.InspectOptions{})
+	if err != nil {
+		return ""
+	}
+
+	if len(net.IPAM.Config) > 0 {
+		return net.IPAM.Config[0].Gateway
+	}
+	return ""
 }
 
 func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
