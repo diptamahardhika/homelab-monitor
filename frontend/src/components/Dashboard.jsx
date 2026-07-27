@@ -488,7 +488,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchAll()
-    const interval = setInterval(fetchAll, 15000)
+    const interval = setInterval(fetchAll, 5000)
     return () => clearInterval(interval)
   }, [fetchAll])
 
@@ -505,6 +505,13 @@ export default function Dashboard() {
       // ignore
     }
   }
+
+  const cpuPct = systemStats?.cpu_usage_percent ?? 0
+  const systemAccent = cpuPct < 50
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : cpuPct < 70
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-rose-600 dark:text-rose-400'
 
   const upCount = servers.filter(s => s.alive).length
   const servicesUp = services.filter(s => s.status === 'up').length
@@ -560,7 +567,7 @@ export default function Dashboard() {
         <StatCard
           title="System"
           value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
-          accent="text-rose-600 dark:text-rose-400"
+          accent={systemAccent}
           onClick={openSystem}
           subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
         />
