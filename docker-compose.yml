@@ -5,6 +5,8 @@ services:
     container_name: homelab-monitor
     ports:
       - "9876:9876"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - homelab-monitor-data:/app/data
