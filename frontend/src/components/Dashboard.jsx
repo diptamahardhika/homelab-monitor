@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 function SunIcon() {
   return (
@@ -42,6 +42,61 @@ function Dot({ alive }) {
   )
 }
 
+function LatencySparkline({ history, height = 32, width = 160 }) {
+  if (!history || history.length < 2) return null
+
+  const values = history.map(h => {
+    if (typeof h === 'number') return h
+    const n = parseInt(h, 10)
+    return isNaN(n) ? 0 : n
+  })
+
+  const max = Math.max(...values, 1)
+  const min = Math.min(...values, 0)
+  const range = max - min || 1
+
+  const points = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width
+    const y = height - ((v - min) / range) * (height - 4) - 2
+    return `${x},${y}`
+  }).join(' ')
+
+  const area = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * width
+    const y = height - ((v - min) / range) * (height - 4) - 2
+    return `${x},${y}`
+  }).join(' ')
+
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-3">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium text-gray-500">Latency (last {values.length} polls)</span>
+        <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{values[values.length - 1]}ms</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full">
+        <defs>
+          <linearGradient id={`grad-${values.length}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgb(52,211,153)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="rgb(52,211,153)" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+        <polygon
+          fill={`url(#grad-${values.length})`}
+          points={`0,${height} ${area} ${width},${height}`}
+        />
+        <polyline
+          fill="none"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="stroke-emerald-500"
+          points={points}
+        />
+      </svg>
+    </div>
+  )
+}
+
 function StatCard({ title, value, subtitle, accent, onClick }) {
   return (
     <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-5 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full">
@@ -70,7 +125,7 @@ function ServerCard({ server, onClick }) {
   )
 }
 
-function DetailPanel({ item, type, onClose }) {
+function DetailPanel({ item, type, onClose, latencyHistory }) {
   if (!item) return null
 
   return (
@@ -85,9 +140,91 @@ function DetailPanel({ item, type, onClose }) {
         </div>
 
         <div className="p-6 space-y-6">
-          {type === 'server' && <ServerDetail item={item} />}
-          {type === 'service' && <ServiceDetail item={item} />}
+          {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} />}
+          {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} />}
           {type === 'container' && <ContainerDetail item={item} />}
+          {type === 'system' && <SystemDetail stats={item} />}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Bar({ value, label, valueLabel, color, total }) {
+  const pct = total > 0 ? Math.min((value / total) * 100, 100) : 0
+  const bg = {
+    emerald: 'bg-emerald-500',
+    blue: 'bg-blue-500',
+    amber: 'bg-amber-500',
+    purple: 'bg-purple-500',
+  }[color] || 'bg-emerald-500'
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        <span className="text-sm font-mono text-gray-500">{valueLabel}</span>
+      </div>
+      <div className="h-3 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-500 ${bg}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+function SystemDetail({ stats }) {
+  if (!stats) return null
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">System</h3>
+        <Bar
+          label="CPU"
+          value={stats.cpu_usage_percent}
+          total={100}
+          valueLabel={`${stats.cpu_usage_percent}%`}
+          color="emerald"
+        />
+        <Bar
+          label="Memory"
+          value={stats.memory_used_mb}
+          total={stats.memory_total_mb}
+          valueLabel={`${stats.memory_used_mb} MB / ${stats.memory_total_mb} MB`}
+          color="blue"
+        />
+        <Bar
+          label="Storage"
+          value={stats.disk_used_gb}
+          total={stats.disk_total_gb}
+          valueLabel={`${stats.disk_used_gb} GB / ${stats.disk_total_gb} GB`}
+          color="amber"
+        />
+      </div>
+
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Details</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-gray-500">Hostname</p>
+            <p className="text-sm font-mono text-gray-900 dark:text-white truncate">{stats.hostname}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">OS</p>
+            <p className="text-sm text-gray-900 dark:text-white truncate">{stats.os}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Kernel</p>
+            <p className="text-sm text-gray-900 dark:text-white truncate">{stats.kernel}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Uptime</p>
+            <p className="text-sm text-gray-900 dark:text-white">{stats.uptime || '-'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">CPU Cores</p>
+            <p className="text-sm text-gray-900 dark:text-white">{stats.cpu_count}</p>
+          </div>
         </div>
       </div>
     </div>
@@ -104,7 +241,7 @@ function DetailRow({ label, value, mono }) {
   )
 }
 
-function ServerDetail({ item }) {
+function ServerDetail({ item, latencyHistory }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -117,11 +254,12 @@ function ServerDetail({ item }) {
         <DetailRow label="Latency" value={item.latency} />
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
+      {latencyHistory && <LatencySparkline history={latencyHistory} />}
     </div>
   )
 }
 
-function ServiceDetail({ item }) {
+function ServiceDetail({ item, latencyHistory }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -135,6 +273,7 @@ function ServiceDetail({ item }) {
         <DetailRow label="Latency" value={item.latency} />
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
+      {latencyHistory && <LatencySparkline history={latencyHistory} />}
     </div>
   )
 }
@@ -290,11 +429,13 @@ export default function Dashboard() {
   const [servers, setServers] = useState([])
   const [services, setServices] = useState([])
   const [containers, setContainers] = useState([])
+  const [systemStats, setSystemStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
+  const latencyHistoryRef = useRef({})
 
   const toggleTheme = () => {
     const next = !dark
@@ -312,14 +453,31 @@ export default function Dashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [srv, svc, dock] = await Promise.all([
+      const [srv, svc, dock, sys] = await Promise.all([
         fetch('/api/servers').then(r => r.json()),
         fetch('/api/services').then(r => r.json()),
         fetch('/api/docker').then(r => r.json()),
+        fetch('/api/system').then(r => r.json()),
       ])
       setServers(srv)
       setServices(svc)
       setContainers(dock)
+      setSystemStats(sys)
+
+      const newHistory = { ...latencyHistoryRef.current }
+      for (const item of [...srv, ...svc]) {
+        if (!item.latency) continue
+        if (!newHistory[item.name]) newHistory[item.name] = []
+        const val = parseInt(item.latency, 10)
+        if (!isNaN(val)) {
+          newHistory[item.name].push(val)
+          if (newHistory[item.name].length > 30) {
+            newHistory[item.name].shift()
+          }
+        }
+      }
+      latencyHistoryRef.current = newHistory
+
       setError(null)
     } catch (e) {
       setError(e.message)
@@ -337,6 +495,7 @@ export default function Dashboard() {
   const openServer = (s) => setPanel({ type: 'server', item: s })
   const openService = (s) => setPanel({ type: 'service', item: s })
   const openContainer = (c) => setPanel({ type: 'container', item: c })
+  const openSystem = () => setPanel({ type: 'system', item: systemStats })
 
   const handleDeleteService = async (name) => {
     try {
@@ -359,8 +518,8 @@ export default function Dashboard() {
     return (
       <div className="mx-auto max-w-6xl p-6 space-y-6 animate-pulse">
         <div className="h-8 w-48 bg-gray-200 dark:bg-gray-800 rounded" />
-        <div className="grid grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-xl" />)}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-xl" />)}
         </div>
         {[...Array(3)].map((_, i) => <div key={i} className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl" />)}
       </div>
@@ -394,10 +553,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-3">
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
         <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
         <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
+        <StatCard
+          title="System"
+          value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
+          accent="text-rose-600 dark:text-rose-400"
+          onClick={openSystem}
+          subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
+        />
       </div>
 
       {servers.length > 0 && (
@@ -507,7 +673,14 @@ export default function Dashboard() {
       )}
 
       {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={fetchAll} />}
-      {panel && <DetailPanel item={panel.item} type={panel.type} onClose={() => setPanel(null)} />}
+      {panel && (
+        <DetailPanel
+          item={panel.item}
+          type={panel.type}
+          onClose={() => setPanel(null)}
+          latencyHistory={latencyHistoryRef.current[panel.item?.name]}
+        />
+      )}
     </div>
   )
 }

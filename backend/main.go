@@ -47,6 +47,7 @@ func main() {
 		r.Delete("/services/{name}", h.DeleteService)
 		r.Get("/docker", h.DockerContainers)
 		r.Get("/docker/{id}", h.DockerContainerDetail)
+		r.Get("/system", h.System)
 	})
 
 	staticDir := os.Getenv("STATIC_DIR")

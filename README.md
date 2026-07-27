@@ -9,6 +9,8 @@ Built with a **Go** backend and a **React + Vite** frontend styled with **Tailwi
 - **Server monitoring** — TCP port reachability checks
 - **Service monitoring** — HTTP health check endpoints (200-399 = up)
 - **Docker container monitoring** — real-time container status, logs, and stats via the Docker socket
+- **System resource monitoring** — real-time CPU, memory, and disk usage graphs
+- **Latency sparklines** — time-series latency history for every server and service
 - **REST API** — add/remove services on the fly
 - **Single binary** — everything packaged into a Docker image
 
@@ -96,15 +98,16 @@ services:
 
 ## API Endpoints
 
-| Method | Path                  | Description                   |
-|--------|-----------------------|-------------------------------|
-| GET    | `/api/health`         | Backend health check          |
-| GET    | `/api/servers`        | List all configured servers   |
-| GET    | `/api/services`       | List monitored services       |
-| POST   | `/api/services`       | Add a service (JSON body)     |
-| DELETE | `/api/services/{name}`| Remove a service              |
-| GET    | `/api/docker`         | List all Docker containers    |
-| GET    | `/api/docker/{id}`    | Container details and logs    |
+| Method | Path                  | Description                              |
+|--------|-----------------------|------------------------------------------|
+| GET    | `/api/health`         | Backend health check                     |
+| GET    | `/api/servers`        | List all configured servers              |
+| GET    | `/api/services`       | List monitored services                  |
+| POST   | `/api/services`       | Add a service (JSON body)                |
+| DELETE | `/api/services/{name}`| Remove a service                         |
+| GET    | `/api/docker`         | List all Docker containers               |
+| GET    | `/api/docker/{id}`    | Container details and logs               |
+| GET    | `/api/system`         | Host system stats (CPU, memory, disk)    |
 
 ## Docker Socket
 
