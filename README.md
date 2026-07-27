@@ -45,7 +45,7 @@ docker run -d \
   ghcr.io/pradiptamahardika/homelab-monitor:latest
 ```
 
-Open **http://localhost:9876**
+Open **http://localhost:9876** (production) or **http://localhost:5173** (development)
 
 ### Portainer (docker-compose stack)
 
@@ -132,13 +132,15 @@ volumes:
 cd backend && go run .
 ```
 
+The Go API server runs on `http://localhost:9876`.
+
 ### Frontend
 
 ```bash
 cd frontend && npm install && npm run dev
 ```
 
-The Vite dev server proxies `/api` requests to the Go backend (default `http://localhost:9876`).
+The Vite dev server runs the web UI on **http://localhost:5173** and proxies `/api` requests to the Go backend at `http://localhost:9876`.
 
 ## Build from Source
 
