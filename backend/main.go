@@ -25,7 +25,12 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	h := handlers.New(cfg)
+	dataPath := os.Getenv("DATA_PATH")
+	if dataPath == "" {
+		dataPath = "/app/data/extra_services.json"
+	}
+
+	h := handlers.New(cfg, dataPath)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)

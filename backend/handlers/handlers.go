@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -16,10 +17,29 @@ type Handler struct {
 	cfg           *config.Config
 	mu            sync.RWMutex
 	extraServices []config.Service
+	dataPath      string
 }
 
-func New(cfg *config.Config) *Handler {
-	return &Handler{cfg: cfg}
+func New(cfg *config.Config, dataPath string) *Handler {
+	h := &Handler{cfg: cfg, dataPath: dataPath}
+	h.loadExtraServices()
+	return h
+}
+
+func (h *Handler) loadExtraServices() {
+	data, err := os.ReadFile(h.dataPath)
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &h.extraServices)
+}
+
+func (h *Handler) saveExtraServices() error {
+	data, err := json.MarshalIndent(h.extraServices, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(h.dataPath, data, 0644)
 }
 
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +107,10 @@ func (h *Handler) AddService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.extraServices = append(h.extraServices, svc)
+	if err := h.saveExtraServices(); err != nil {
+		jsonError(w, "failed to persist service", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
@@ -101,6 +125,7 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 	for i, s := range h.extraServices {
 		if s.Name == name {
 			h.extraServices = append(h.extraServices[:i], h.extraServices[i+1:]...)
+			h.saveExtraServices()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 			return

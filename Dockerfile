@@ -19,6 +19,8 @@ FROM alpine:3.19
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
+RUN mkdir -p /app/data
+
 COPY --from=backend /app/homelab-monitor .
 COPY --from=frontend /build/dist ./static
 COPY config.yaml /app/config.yaml
