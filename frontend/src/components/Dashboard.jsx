@@ -126,25 +126,45 @@ function ServerCard({ server, onClick }) {
 }
 
 function DetailPanel({ item, type, onClose, latencyHistory }) {
-  if (!item) return null
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (item) {
+      requestAnimationFrame(() => setVisible(true))
+    } else {
+      setVisible(false)
+    }
+  }, [item])
+
+  const handleClose = () => {
+    setVisible(false)
+    setTimeout(onClose, 200)
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" role="dialog">
-      <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-lg bg-white dark:bg-gray-950 border-l border-gray-200 dark:border-gray-800 shadow-2xl overflow-y-auto transition-colors">
+    <div className={`fixed inset-0 z-50 flex justify-end pointer-events-none ${visible ? 'pointer-events-auto' : ''}`} role="dialog">
+      <div
+        className={`absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm transition-opacity duration-200 ${visible ? 'opacity-100' : 'opacity-0'}`}
+        onClick={handleClose}
+      />
+      <div
+        className={`relative w-full max-w-lg bg-white dark:bg-gray-950 border-l border-gray-200 dark:border-gray-800 shadow-2xl overflow-y-auto transition-transform duration-200 ease-out ${visible ? 'translate-x-0' : 'translate-x-full'}`}
+      >
         <div className="sticky top-0 z-10 flex items-center justify-between bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 px-6 py-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4">{item.name || item.title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4">{item?.name || item?.title}</h2>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} />}
-          {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} />}
-          {type === 'container' && <ContainerDetail item={item} />}
-          {type === 'system' && <SystemDetail stats={item} />}
-        </div>
+        {item && (
+          <div className="p-6 space-y-6">
+            {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} />}
+            {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} />}
+            {type === 'container' && <ContainerDetail item={item} />}
+            {type === 'system' && <SystemDetail stats={item} />}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -709,14 +729,12 @@ export default function Dashboard() {
       )}
 
       {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={fetchAll} />}
-      {panel && (
-        <DetailPanel
-          item={panel.item}
-          type={panel.type}
-          onClose={() => setPanel(null)}
-          latencyHistory={latencyHistoryRef.current[panel.item?.name]}
-        />
-      )}
+      <DetailPanel
+        item={panel?.item}
+        type={panel?.type}
+        onClose={() => setPanel(null)}
+        latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
+      />
     </div>
   )
 }
