@@ -2,11 +2,17 @@ port: 9876
 
 servers:
   - name: Localhost
-    # Use host.docker.internal to reach the host machine from inside the container.
-    # On Linux, add `extra_hosts: - "host.docker.internal:host-gateway"` to your compose service.
     host: host.docker.internal
     port: 22
     type: tcp
+
+  - name: Docker Host
+    # gateway: docker auto-resolves the bridge gateway IP via the Docker socket.
+    # This reaches the host machine reliably across Docker Desktop, WSL2, and Linux.
+    host: host.docker.internal
+    port: 9000
+    type: tcp
+    gateway: docker
 
 services:
   - name: Example HTTP

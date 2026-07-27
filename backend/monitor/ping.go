@@ -18,7 +18,7 @@ type ServerStatus struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func CheckServer(ctx context.Context, name, host string, port int, checkType string) ServerStatus {
+func CheckServer(ctx context.Context, name, host string, port int, checkType string, dialHost ...string) ServerStatus {
 	status := ServerStatus{
 		Name: name,
 		Host: host,
@@ -26,13 +26,18 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		Type: checkType,
 	}
 
+	addr := host
+	if len(dialHost) > 0 && dialHost[0] != "" {
+		addr = dialHost[0]
+	}
+
 	start := time.Now()
 
 	switch checkType {
 	case "http":
-		url := fmt.Sprintf("http://%s:%d", host, port)
+		url := fmt.Sprintf("http://%s:%d", addr, port)
 		if port == 0 || port == 80 || port == 443 {
-			url = fmt.Sprintf("http://%s", host)
+			url = fmt.Sprintf("http://%s", addr)
 		}
 		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Get(url)
@@ -50,8 +55,7 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	case "tcp":
-		addr := fmt.Sprintf("%s:%d", host, port)
-		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, port), 5*time.Second)
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -63,7 +67,7 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	default:
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, port), 5*time.Second)
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
