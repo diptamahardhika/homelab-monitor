@@ -2,6 +2,8 @@ package monitor
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -20,6 +22,15 @@ type DockerContainer struct {
 	Created int64  `json:"created"`
 }
 
+type ContainerStats struct {
+	CPUPercent    float64 `json:"cpu_percent"`
+	MemoryUsageMB float64 `json:"memory_usage_mb"`
+	MemoryLimitMB float64 `json:"memory_limit_mb"`
+	MemoryPercent float64 `json:"memory_percent"`
+	NetworkRxMB   float64 `json:"network_rx_mb"`
+	NetworkTxMB   float64 `json:"network_tx_mb"`
+}
+
 type DockerContainerDetail struct {
 	ID      string            `json:"id"`
 	Name    string            `json:"name"`
@@ -36,6 +47,7 @@ type DockerContainerDetail struct {
 	Command string            `json:"command"`
 	Size    string            `json:"size"`
 	Uptime  string            `json:"uptime"`
+	Stats   *ContainerStats   `json:"stats,omitempty"`
 }
 
 func getClient() (*client.Client, error) {
@@ -187,6 +199,10 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 	}
 
 	if detail.State.Running {
+		result.Stats = GetContainerStats(ctx, containerID)
+	}
+
+	if detail.State.Running {
 		result.Status = "running"
 	} else if detail.State.ExitCode != 0 {
 		result.Status = "exited (" + itoa(detail.State.ExitCode) + ")"
@@ -195,6 +211,92 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 	}
 
 	return result, nil
+}
+
+func GetContainerStats(ctx context.Context, containerID string) *ContainerStats {
+	cli, err := getClient()
+	if err != nil {
+		return nil
+	}
+
+	resp, err := cli.ContainerStats(ctx, containerID, false)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage float64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage float64 `json:"system_cpu_usage"`
+			OnlineCPUs     uint    `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PrecpuStats struct {
+			CPUUsage struct {
+				TotalUsage float64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage float64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage float64 `json:"usage"`
+			Limit float64 `json:"limit"`
+			Stats struct {
+				Cache float64 `json:"cache"`
+			} `json:"stats"`
+		} `json:"memory_stats"`
+		Networks map[string]struct {
+			RxBytes float64 `json:"rx_bytes"`
+			TxBytes float64 `json:"tx_bytes"`
+		} `json:"networks"`
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+
+	cpuDelta := raw.CPUStats.CPUUsage.TotalUsage - raw.PrecpuStats.CPUUsage.TotalUsage
+	systemDelta := raw.CPUStats.SystemCPUUsage - raw.PrecpuStats.SystemCPUUsage
+	cpuPercent := 0.0
+	if systemDelta > 0 && raw.CPUStats.OnlineCPUs > 0 {
+		cpuPercent = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100
+	}
+
+	cache := raw.MemoryStats.Stats.Cache
+	memUsage := raw.MemoryStats.Usage
+	if cache > 0 && memUsage > cache {
+		memUsage = memUsage - cache
+	}
+	memLimit := raw.MemoryStats.Limit
+	memPercent := 0.0
+	if memLimit > 0 {
+		memPercent = (memUsage / memLimit) * 100
+	}
+
+	var rxBytes, txBytes float64
+	for _, net := range raw.Networks {
+		rxBytes += net.RxBytes
+		txBytes += net.TxBytes
+	}
+
+	return &ContainerStats{
+		CPUPercent:    round2(cpuPercent),
+		MemoryUsageMB: round2(memUsage / 1024 / 1024),
+		MemoryLimitMB: round2(memLimit / 1024 / 1024),
+		MemoryPercent: round2(memPercent),
+		NetworkRxMB:   round2(rxBytes / 1024 / 1024),
+		NetworkTxMB:   round2(txBytes / 1024 / 1024),
+	}
+}
+
+func round2(v float64) float64 {
+	return float64(int(v*100)) / 100
 }
 
 func itoa(n int) string {

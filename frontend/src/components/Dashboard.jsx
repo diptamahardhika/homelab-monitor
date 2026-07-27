@@ -324,6 +324,32 @@ function ContainerDetail({ item }) {
         {d.ip && <DetailRow label="IP Address" value={d.ip} mono />}
       </div>
 
+      {d.stats && (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Performance</h3>
+          <Bar
+            label="CPU"
+            value={d.stats.cpu_percent}
+            total={100}
+            valueLabel={`${d.stats.cpu_percent}%`}
+            color="emerald"
+          />
+          <Bar
+            label="Memory"
+            value={d.stats.memory_usage_mb}
+            total={d.stats.memory_limit_mb}
+            valueLabel={`${d.stats.memory_usage_mb} MB / ${d.stats.memory_limit_mb} MB`}
+            color="blue"
+          />
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Network</span>
+            <span className="font-mono text-gray-900 dark:text-white">
+              ↓{d.stats.network_rx_mb} MB / ↑{d.stats.network_tx_mb} MB
+            </span>
+          </div>
+        </div>
+      )}
+
       {d.mounts && d.mounts.length > 0 && (
         <div>
           <h4 className="text-sm font-medium text-gray-500 mb-2">Mounts</h4>
