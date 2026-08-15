@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { refreshIntervalForVisibility } from '../refresh.mjs'
+import ConfigEditor from './ConfigEditor'
+import ContainerLogViewer from './ContainerLogViewer'
+import DependencyMap from './DependencyMap'
+import LayoutEditor from './LayoutEditor'
 
 function AlertTriangleIcon() {
   return (
@@ -699,6 +703,10 @@ export default function Dashboard() {
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
+  const [showConfigEditor, setShowConfigEditor] = useState(false)
+  const [showDependencyMap, setShowDependencyMap] = useState(false)
+  const [showLayoutEditor, setShowLayoutEditor] = useState(false)
+  const [logViewerContainer, setLogViewerContainer] = useState(null)
   const latencyHistoryRef = useRef({})
   const statusHistoryRef = useRef({})
 
@@ -791,7 +799,10 @@ export default function Dashboard() {
 
   const openServer = (s) => setPanel({ type: 'server', item: s })
   const openService = (s) => setPanel({ type: 'service', item: s })
-  const openContainer = (c) => setPanel({ type: 'container', item: c })
+  const openContainer = (c) => {
+    setPanel({ type: 'container', item: c })
+    setLogViewerContainer(c)
+  }
   const openSystem = () => setPanel({ type: 'system', item: systemStats })
 
   const handleDeleteService = async (name) => {
@@ -846,6 +857,15 @@ export default function Dashboard() {
             title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {dark ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button onClick={() => setShowLayoutEditor(true)} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white" title="Dashboard Layout">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+          </button>
+          <button onClick={() => setShowConfigEditor(true)} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white" title="Configuration">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+          <button onClick={() => setShowDependencyMap(true)} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white" title="Dependencies">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
           </button>
           <button onClick={fetchAll} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-900/80 active:scale-95">
             Refresh
@@ -1049,10 +1069,14 @@ export default function Dashboard() {
       )}
 
       {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={fetchAll} />}
+      {showConfigEditor && <ConfigEditor onClose={() => setShowConfigEditor(false)} onSaved={fetchAll} />}
+      {showDependencyMap && <DependencyMap services={services} onClose={() => setShowDependencyMap(false)} />}
+      {showLayoutEditor && <LayoutEditor onClose={() => setShowLayoutEditor(false)} onSaved={() => {}} />}
+      {logViewerContainer && <ContainerLogViewer containerId={logViewerContainer.id} containerName={logViewerContainer.name || logViewerContainer.id} onClose={() => setLogViewerContainer(null)} />}
       <DetailPanel
         item={panel?.item}
         type={panel?.type}
-        onClose={() => setPanel(null)}
+        onClose={() => { setPanel(null); setLogViewerContainer(null) }}
         latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
         statusHistory={statusHistoryRef.current[panel?.item?.name]}
       />
