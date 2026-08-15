@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -220,6 +221,32 @@ func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(detail)
+}
+
+func (h *Handler) ContainerLogs(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	
+	tailStr := r.URL.Query().Get("tail")
+	tailLines := 100
+	if tailStr != "" {
+		if n, err := strconv.Atoi(tailStr); err == nil && n > 0 {
+			tailLines = n
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	logs, err := monitor.GetContainerLogs(ctx, id, tailLines)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(logs))
 }
 
 func (h *Handler) System(w http.ResponseWriter, r *http.Request) {

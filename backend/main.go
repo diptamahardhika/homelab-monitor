@@ -55,6 +55,7 @@ func main() {
 		r.Delete("/services/{name}", h.DeleteService)
 		r.Get("/docker", h.DockerContainers)
 		r.Get("/docker/{id}", h.DockerContainerDetail)
+		r.Get("/docker/{id}/logs", h.ContainerLogs)
 		r.Get("/system", h.System)
 		r.Get("/config", h.GetConfig)
 		r.Put("/config", h.UpdateConfig)
