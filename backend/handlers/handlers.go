@@ -65,14 +65,14 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 			if server.Gateway == "docker" {
 				dialHost = monitor.GetDockerGatewayIP(ctx)
 			}
-			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, dialHost)
+			overview.Servers[i] = monitor.CheckServer(ctx, server, dialHost)
 			return nil
 		})
 	}
 	for i, service := range services {
 		i, service := i, service
 		tasks = append(tasks, func(ctx context.Context) error {
-			overview.Services[i] = monitor.CheckService(ctx, service.Name, service.URL, service.Type)
+			overview.Services[i] = monitor.CheckService(ctx, service)
 			return nil
 		})
 	}
