@@ -109,6 +109,7 @@ services:
 | Method | Path                  | Description                              |
 |--------|-----------------------|------------------------------------------|
 | GET    | `/api/health`         | Backend health check                     |
+| GET    | `/api/overview`       | Cached snapshot of all dashboard data    |
 | GET    | `/api/servers`        | List all configured servers              |
 | GET    | `/api/services`       | List monitored services                  |
 | POST   | `/api/services`       | Add a service (JSON body)                |

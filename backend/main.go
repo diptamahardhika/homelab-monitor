@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
+	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/diptamahardhika/homelab-monitor/backend/handlers"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/pradiptamahardika/homelab-monitor/config"
-	"github.com/pradiptamahardika/homelab-monitor/handlers"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func main() {
 	}
 
 	h := handlers.New(cfg, dataPath)
+	h.Start(context.Background())
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -46,6 +48,7 @@ func main() {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.Health)
+		r.Get("/overview", h.Overview)
 		r.Get("/servers", h.Servers)
 		r.Get("/services", h.Services)
 		r.Post("/services", h.AddService)

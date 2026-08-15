@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { refreshIntervalForVisibility } from '../refresh.mjs'
 
 function SunIcon() {
   return (
@@ -577,16 +578,15 @@ export default function Dashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [srv, svc, dock, sys] = await Promise.all([
-        fetch('/api/servers').then(r => r.json()),
-        fetch('/api/services').then(r => r.json()),
-        fetch('/api/docker').then(r => r.json()),
-        fetch('/api/system').then(r => r.json()),
-      ])
-      setServers(Array.isArray(srv) ? srv : [])
-      setServices(Array.isArray(svc) ? svc : [])
-      setContainers(Array.isArray(dock) ? dock : [])
-      setSystemStats(sys)
+      const response = await fetch('/api/overview')
+      if (!response.ok) throw new Error(`Dashboard refresh failed (${response.status})`)
+      const overview = await response.json()
+      const srv = Array.isArray(overview.servers) ? overview.servers : []
+      const svc = Array.isArray(overview.services) ? overview.services : []
+      setServers(srv)
+      setServices(svc)
+      setContainers(Array.isArray(overview.containers) ? overview.containers : [])
+      setSystemStats(overview.system || null)
 
       const newHistory = { ...latencyHistoryRef.current }
       const newStatusHistory = { ...statusHistoryRef.current }
@@ -617,9 +617,36 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
-    const interval = setInterval(fetchAll, 5000)
-    return () => clearInterval(interval)
+    let timer
+    let stopped = false
+    let polling = false
+
+    const scheduleNext = () => {
+      if (!stopped) timer = setTimeout(poll, refreshIntervalForVisibility(document.visibilityState))
+    }
+    const poll = async () => {
+      if (stopped || polling) return
+      polling = true
+      await fetchAll()
+      polling = false
+      scheduleNext()
+    }
+    const handleVisibilityChange = () => {
+      clearTimeout(timer)
+      if (document.visibilityState === 'visible') {
+        poll()
+      } else {
+        scheduleNext()
+      }
+    }
+
+    poll()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [fetchAll])
 
   const openServer = (s) => setPanel({ type: 'server', item: s })
