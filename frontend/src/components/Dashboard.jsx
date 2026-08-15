@@ -1,6 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { refreshIntervalForVisibility } from '../refresh.mjs'
 
+function AlertTriangleIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  )
+}
+
+function AlertCircleIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+    </svg>
+  )
+}
+
 function SunIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -14,6 +30,83 @@ function MoonIcon() {
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
     </svg>
+  )
+}
+
+function AttentionBanner({ downServers, downServices, runningContainers, containers, systemStats, onRefresh, onAddService, onAddServer, onViewDocker }) {
+  const hasAlerts = downServers.length > 0 || downServices.length > 0 || (containers.length > 0 && containers.some(c => c.state !== 'running' && c.state !== 'exited')) || (systemStats && (systemStats.memory_used_percent > 90 || systemStats.disk_used_percent > 90 || systemStats.cpu_usage_percent > 90))
+  
+  if (!hasAlerts) return null
+
+  const criticalCount = downServers.length + downServices.length + (containers.filter(c => c.state !== 'running' && c.state !== 'exited').length)
+  const warningCount = (systemStats && (systemStats.memory_used_percent > 90 || systemStats.disk_used_percent > 90 || systemStats.cpu_usage_percent > 90)) ? 1 : 0
+
+  return (
+    <div className="mb-6 rounded-xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/30 p-4 transition-all" role="alert">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30">
+              <AlertTriangleIcon className="text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-red-800 dark:text-red-200">Attention Required</h3>
+              <p className="text-sm text-red-700 dark:text-red-300">
+                {criticalCount} critical issue{criticalCount !== 1 ? 's' : ''} {warningCount > 0 ? `and ${warningCount} warning${warningCount !== 1 ? 's' : ''}` : ''} detected
+              </p>
+            </div>
+          </div>
+          
+          <div className="ml-10 flex flex-wrap gap-2">
+            {downServers.map((s, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                {s.name} ({s.host}:{s.port})
+              </span>
+            ))}
+            {downServices.map((s, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                {s.name}
+              </span>
+            ))}
+            {containers.filter(c => c.state !== 'running' && c.state !== 'exited').map((c, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                {c.name || c.id.slice(0, 12)} ({c.state})
+              </span>
+            ))}
+            {systemStats && systemStats.memory_used_percent > 90 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                Memory {systemStats.memory_used_percent}%
+              </span>
+            )}
+            {systemStats && systemStats.disk_used_percent > 90 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                Disk {systemStats.disk_used_percent}%
+              </span>
+            )}
+            {systemStats && systemStats.cpu_usage_percent > 90 && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
+                <AlertCircleIcon className="w-3 h-3" />
+                CPU {systemStats.cpu_usage_percent}%
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={onAddService} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
+            + Add Service
+          </button>
+          <button onClick={onRefresh} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700">
+            Refresh
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -478,16 +571,33 @@ function AddServiceModal({ onClose, onAdded }) {
   const [type, setType] = useState('http')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState(null)
+  const [fieldErrors, setFieldErrors] = useState({})
+
+  const validateForm = () => {
+    const errors = {}
+    if (!name.trim()) errors.name = 'Name is required'
+    if (!url.trim()) errors.url = 'URL is required'
+    else {
+      try {
+        new URL(url)
+      } catch {
+        errors.url = 'Please enter a valid URL (e.g., https://example.com)'
+      }
+    }
+    setFieldErrors(errors)
+    return Object.keys(errors).length === 0
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!validateForm()) return
     setAdding(true)
     setError(null)
     try {
       const res = await fetch('/api/services', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, url, type }),
+        body: JSON.stringify({ name: name.trim(), url: url.trim(), type }),
       })
       if (!res.ok) {
         let errMsg = 'Failed to add service'
@@ -508,31 +618,61 @@ function AddServiceModal({ onClose, onAdded }) {
     }
   }
 
+  const handleChange = (field, value) => {
+    if (field === 'name') setName(value)
+    if (field === 'url') setUrl(value)
+    if (field === 'type') setType(value)
+    if (fieldErrors[field]) setFieldErrors(prev => ({ ...prev, [field]: null }))
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog">
       <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Service</h3>
+      <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4 animate-in slide-in-from-top-2 duration-200">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Add Service</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="My Service"
-              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <input
+              type="text"
+              value={name}
+              onChange={e => handleChange('name', e.target.value)}
+              required
+              placeholder="My Service"
+              className={`w-full rounded-lg border px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors ${
+                fieldErrors.name ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30' : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900'
+              }`}
+            />
+            {fieldErrors.name && <p className="mt-1 text-xs text-red-500">{fieldErrors.name}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">URL / Address</label>
-            <input type="text" value={url} onChange={e => setUrl(e.target.value)} required placeholder="https://example.com"
-              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            <input
+              type="text"
+              value={url}
+              onChange={e => handleChange('url', e.target.value)}
+              required
+              placeholder="https://example.com"
+              className={`w-full rounded-lg border px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors ${
+                fieldErrors.url ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/30' : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900'
+              }`}
+            />
+            {fieldErrors.url && <p className="mt-1 text-xs text-red-500">{fieldErrors.url}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
-            <select value={type} onChange={e => setType(e.target.value)}
+            <select value={type} onChange={e => handleChange('type', e.target.value)}
               className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
               <option value="http">HTTP / HTTPS</option>
               <option value="tcp">TCP</option>
             </select>
           </div>
-          {error && <p className="text-sm text-red-500">{error}</p>}
+          {error && <p className="text-sm text-red-500 flex items-center gap-1"><AlertCircleIcon className="w-4 h-4" />{error}</p>}
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="rounded-lg border border-gray-200 dark:border-gray-800 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
@@ -671,7 +811,9 @@ export default function Dashboard() {
       : 'text-rose-600 dark:text-rose-400'
 
   const upCount = servers.filter(s => s.alive).length
+  const downServers = servers.filter(s => !s.alive)
   const servicesUp = services.filter(s => s.status === 'up').length
+  const downServices = services.filter(s => s.status === 'down')
   const runningContainers = containers.filter(c => c.state === 'running').length
 
   const scrollToSection = (id) => {
@@ -711,6 +853,18 @@ export default function Dashboard() {
         </div>
       </header>
 
+      <AttentionBanner
+        downServers={downServers}
+        downServices={downServices}
+        runningContainers={runningContainers}
+        containers={containers}
+        systemStats={systemStats}
+        onRefresh={fetchAll}
+        onAddService={() => setShowAddService(true)}
+        onAddServer={() => {}}
+        onViewDocker={() => {}}
+      />
+
       {error && (
         <div className="mb-6 rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/30 p-4 text-sm text-red-700 dark:text-red-400">
           {error}
@@ -718,9 +872,9 @@ export default function Dashboard() {
       )}
 
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
-        <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
-        <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
+        <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : downServers.length > 0 ? `${downServers.length} down` : ''} />
+        <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : downServices.length > 0 ? `${downServices.length} down` : ''} />
+        <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : containers.some(c => c.state !== 'running' && c.state !== 'exited') ? 'some unhealthy' : ''} />
         <StatCard
           title="System"
           value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
@@ -735,6 +889,21 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
+          </div>
+        </section>
+      )}
+
+      {servers.length === 0 && (
+        <section id="servers-section" className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
+          <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center bg-gray-50 dark:bg-gray-900/30">
+            <div className="mx-auto w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">No servers configured</h3>
+            <p className="text-gray-500 mb-4 max-w-xs mx-auto">Add TCP servers in <code className="rounded bg-gray-100 dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-600 dark:text-gray-400">config.yaml</code> to monitor SSH, databases, and custom ports.</p>
           </div>
         </section>
       )}
@@ -793,6 +962,34 @@ export default function Dashboard() {
         </section>
       )}
 
+      {services.length === 0 && (
+        <section id="services-section" className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
+            <button onClick={() => setShowAddService(true)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
+              + Add Service
+            </button>
+          </div>
+          <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center bg-gray-50 dark:bg-gray-900/30">
+            <div className="mx-auto w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-emerald-600 dark:text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">No services configured</h3>
+            <p className="text-gray-500 mb-4 max-w-xs mx-auto">Add your first HTTP or TCP service to start monitoring endpoints like APIs, databases, or custom health checks.</p>
+            <button onClick={() => setShowAddService(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              Add your first service
+            </button>
+          </div>
+        </section>
+      )}
+
       {containers.length > 0 && (
         <section id="containers-section" className="mb-8">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
@@ -825,6 +1022,21 @@ export default function Dashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {containers.length === 0 && (
+        <section id="containers-section" className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
+          <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center bg-gray-50 dark:bg-gray-900/30">
+            <div className="mx-auto w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-1">Docker not connected</h3>
+            <p className="text-gray-500 mb-4 max-w-xs mx-auto">Mount the Docker socket (<code className="rounded bg-gray-100 dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-600 dark:text-gray-400">/var/run/docker.sock</code>) to monitor container health, stats, and logs.</p>
           </div>
         </section>
       )}
