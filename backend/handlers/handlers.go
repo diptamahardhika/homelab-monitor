@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/diptamahardhika/homelab-monitor/backend/dependencies"
 	"github.com/diptamahardhika/homelab-monitor/backend/monitor"
 	"github.com/go-chi/chi/v5"
 )
@@ -33,12 +34,15 @@ type Handler struct {
 	extraServices []config.Service
 	dataPath      string
 	cache         *monitor.SnapshotCache[Overview]
+	depsStore     *dependencies.Store
 }
 
 func New(cfg *config.Config, dataPath string) *Handler {
 	h := &Handler{cfg: cfg, dataPath: dataPath}
 	h.loadExtraServices()
 	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
+	depsPath := dataPath[:len(dataPath)-len("extra_services.json")] + "dependencies.json"
+	h.depsStore = dependencies.New(depsPath, func() { h.cache.Invalidate() })
 	return h
 }
 
@@ -332,4 +336,48 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	h.cache.Invalidate()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+func (h *Handler) GetDependencies(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.depsStore.GetAll())
+}
+
+type DependencyRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+func (h *Handler) AddDependency(w http.ResponseWriter, r *http.Request) {
+	var req DependencyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.From == "" || req.To == "" {
+		jsonError(w, "from and to are required", http.StatusBadRequest)
+		return
+	}
+	if err := h.depsStore.Add(dependencies.Dependency{From: req.From, To: req.To}); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+}
+
+func (h *Handler) DeleteDependency(w http.ResponseWriter, r *http.Request) {
+	from := r.URL.Query().Get("from")
+	to := r.URL.Query().Get("to")
+	if from == "" || to == "" {
+		jsonError(w, "from and to query parameters required", http.StatusBadRequest)
+		return
+	}
+	if err := h.depsStore.Remove(from, to); err != nil {
+		jsonError(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
