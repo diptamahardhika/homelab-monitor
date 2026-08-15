@@ -56,6 +56,8 @@ func main() {
 		r.Get("/docker", h.DockerContainers)
 		r.Get("/docker/{id}", h.DockerContainerDetail)
 		r.Get("/system", h.System)
+		r.Get("/config", h.GetConfig)
+		r.Put("/config", h.UpdateConfig)
 	})
 
 	staticDir := os.Getenv("STATIC_DIR")

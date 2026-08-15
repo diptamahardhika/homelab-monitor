@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -341,4 +342,36 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
+}
+
+func GetContainerLogs(ctx context.Context, containerID string, tailLines int) (string, error) {
+	var result string
+	err := withClient(ctx, func(cli *client.Client) error {
+		if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
+			return nil
+		}
+
+		options := container.LogsOptions{
+			ShowStdout: true,
+			ShowStderr: true,
+			Follow:     false,
+			Tail:       fmt.Sprintf("%d", tailLines),
+			Timestamps: true,
+		}
+
+		reader, err := cli.ContainerLogs(ctx, containerID, options)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			return err
+		}
+
+		result = string(data)
+		return nil
+	})
+	return result, err
 }
