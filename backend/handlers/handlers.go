@@ -8,22 +8,98 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/diptamahardhika/homelab-monitor/backend/monitor"
 	"github.com/go-chi/chi/v5"
-	"github.com/pradiptamahardika/homelab-monitor/config"
-	"github.com/pradiptamahardika/homelab-monitor/monitor"
 )
+
+const (
+	defaultRefreshInterval  = 10 * time.Second
+	defaultCheckConcurrency = 6
+)
+
+type Overview struct {
+	Servers    []monitor.ServerStatus    `json:"servers"`
+	Services   []monitor.ServiceStatus   `json:"services"`
+	Containers []monitor.DockerContainer `json:"containers"`
+	System     *monitor.SystemStats      `json:"system"`
+	CheckedAt  string                    `json:"checked_at"`
+}
 
 type Handler struct {
 	cfg           *config.Config
 	mu            sync.RWMutex
 	extraServices []config.Service
 	dataPath      string
+	cache         *monitor.SnapshotCache[Overview]
 }
 
 func New(cfg *config.Config, dataPath string) *Handler {
 	h := &Handler{cfg: cfg, dataPath: dataPath}
 	h.loadExtraServices()
+	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
 	return h
+}
+
+// Start begins background monitoring. Requests only read the latest snapshot.
+func (h *Handler) Start(ctx context.Context) {
+	h.cache.Start(ctx)
+}
+
+func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
+	h.mu.RLock()
+	services := make([]config.Service, 0, len(h.cfg.Services)+len(h.extraServices))
+	services = append(services, h.cfg.Services...)
+	services = append(services, h.extraServices...)
+	h.mu.RUnlock()
+
+	overview := Overview{
+		Servers:  make([]monitor.ServerStatus, len(h.cfg.Servers)),
+		Services: make([]monitor.ServiceStatus, len(services)),
+	}
+	tasks := make([]func(context.Context) error, 0, len(h.cfg.Servers)+len(services)+2)
+	for i, server := range h.cfg.Servers {
+		i, server := i, server
+		tasks = append(tasks, func(ctx context.Context) error {
+			dialHost := ""
+			if server.Gateway == "docker" {
+				dialHost = monitor.GetDockerGatewayIP(ctx)
+			}
+			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, dialHost)
+			return nil
+		})
+	}
+	for i, service := range services {
+		i, service := i, service
+		tasks = append(tasks, func(ctx context.Context) error {
+			overview.Services[i] = monitor.CheckService(ctx, service.Name, service.URL, service.Type)
+			return nil
+		})
+	}
+	tasks = append(tasks,
+		func(ctx context.Context) error {
+			containers, _ := monitor.GetDockerContainers(ctx)
+			overview.Containers = containers
+			return nil
+		},
+		func(ctx context.Context) error {
+			overview.System = monitor.GetSystemStats(ctx)
+			return nil
+		},
+	)
+	if err := monitor.RunBounded(ctx, tasks, defaultCheckConcurrency, func(ctx context.Context, task func(context.Context) error) error {
+		return task(ctx)
+	}); err != nil {
+		return Overview{}, err
+	}
+	overview.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+	return overview, nil
+}
+
+func (h *Handler) currentOverview(ctx context.Context) Overview {
+	_ = h.cache.Refresh(ctx)
+	overview, _ := h.cache.Snapshot()
+	return overview
 }
 
 func (h *Handler) loadExtraServices() {
@@ -46,40 +122,22 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	results := make([]monitor.ServerStatus, len(h.cfg.Servers))
-	for i, s := range h.cfg.Servers {
-		dialHost := ""
-		if s.Gateway == "docker" {
-			dialHost = monitor.GetDockerGatewayIP(ctx)
-		}
-		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, dialHost)
-	}
-
+func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
+	overview := h.currentOverview(r.Context())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(overview)
+}
+
+func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
+	overview := h.currentOverview(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(overview.Servers)
 }
 
 func (h *Handler) Services(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	h.mu.RLock()
-	allSvcs := make([]config.Service, 0, len(h.cfg.Services)+len(h.extraServices))
-	allSvcs = append(allSvcs, h.cfg.Services...)
-	allSvcs = append(allSvcs, h.extraServices...)
-	h.mu.RUnlock()
-
-	results := make([]monitor.ServiceStatus, len(allSvcs))
-	for i, s := range allSvcs {
-		results[i] = monitor.CheckService(ctx, s.Name, s.URL, s.Type)
-	}
-
+	overview := h.currentOverview(r.Context())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(results)
+	json.NewEncoder(w).Encode(overview.Services)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
@@ -115,6 +173,7 @@ func (h *Handler) AddService(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "failed to persist service", http.StatusInternalServerError)
 		return
 	}
+	h.cache.Invalidate()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
@@ -130,6 +189,7 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 		if s.Name == name {
 			h.extraServices = append(h.extraServices[:i], h.extraServices[i+1:]...)
 			h.saveExtraServices()
+			h.cache.Invalidate()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 			return
@@ -140,18 +200,9 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DockerContainers(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	containers, err := monitor.GetDockerContainers(ctx)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]struct{}{})
-		return
-	}
-
+	overview := h.currentOverview(r.Context())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(containers)
+	json.NewEncoder(w).Encode(overview.Containers)
 }
 
 func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) {
@@ -172,11 +223,7 @@ func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) System(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	stats := monitor.GetSystemStats(ctx)
-
+	overview := h.currentOverview(r.Context())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	json.NewEncoder(w).Encode(overview.System)
 }

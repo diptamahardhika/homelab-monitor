@@ -10,13 +10,13 @@ import (
 )
 
 type ServerStatus struct {
-	Name   string `json:"name"`
-	Host   string `json:"host"`
-	Port   int    `json:"port"`
-	Type   string `json:"type"`
-	Alive  bool   `json:"alive"`
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Type    string `json:"type"`
+	Alive   bool   `json:"alive"`
 	Latency string `json:"latency"`
-	Error  string `json:"error,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 func CheckServer(ctx context.Context, name, host string, port int, checkType string, dialHost ...string) ServerStatus {

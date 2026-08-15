@@ -36,10 +36,10 @@ type SystemStats struct {
 }
 
 var (
-	prevNetMu    sync.Mutex
-	prevNetRX    uint64
-	prevNetTX    uint64
-	prevNetTime  time.Time
+	prevNetMu   sync.Mutex
+	prevNetRX   uint64
+	prevNetTX   uint64
+	prevNetTime time.Time
 )
 
 func GetSystemStats(ctx context.Context) *SystemStats {
