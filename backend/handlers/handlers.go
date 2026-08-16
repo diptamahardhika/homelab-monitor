@@ -265,6 +265,72 @@ func (h *Handler) AddService(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
 }
 
+func (h *Handler) UpdateService(w http.ResponseWriter, r *http.Request) {
+	oldName := chi.URLParam(r, "name")
+
+	var svc config.Service
+	if err := json.NewDecoder(r.Body).Decode(&svc); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if svc.Name == "" || svc.URL == "" {
+		jsonError(w, "name and url are required", http.StatusBadRequest)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// update in extraServices (UI-added services)
+	for i, s := range h.extraServices {
+		if s.Name == oldName {
+			for j, other := range h.extraServices {
+				if j != i && other.Name == svc.Name {
+					jsonError(w, "service already exists", http.StatusConflict)
+					return
+				}
+			}
+			h.extraServices[i] = svc
+			if err := h.saveExtraServices(); err != nil {
+				jsonError(w, "failed to persist service", http.StatusInternalServerError)
+				return
+			}
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+			return
+		}
+	}
+
+	// update in config.yaml services
+	for i, s := range h.cfg.Services {
+		if s.Name == oldName {
+			for j, other := range h.cfg.Services {
+				if j != i && other.Name == svc.Name {
+					jsonError(w, "service already exists", http.StatusConflict)
+					return
+				}
+			}
+			h.cfg.Services[i] = svc
+			configPath := os.Getenv("CONFIG_PATH")
+			if configPath == "" {
+				configPath = "config.yaml"
+			}
+			if err := h.cfg.Save(configPath); err != nil {
+				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+			return
+		}
+	}
+
+	jsonError(w, "service not found", http.StatusNotFound)
+}
+
 func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -326,7 +392,7 @@ func (h *Handler) System(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.cfg)
 }

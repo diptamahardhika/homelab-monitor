@@ -7,9 +7,51 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/pradiptamahardika/homelab-monitor/config"
 	"github.com/go-chi/chi/v5"
+	"github.com/pradiptamahardika/homelab-monitor/config"
 )
+
+func TestUpdatingServiceInvalidatesMonitoringSnapshot(t *testing.T) {
+	h := New(&config.Config{Port: 9876}, t.TempDir()+"/services.json")
+
+	addReq := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewBufferString(`{"name":"OldName","url":"http://127.0.0.1:1","type":"http"}`))
+	addReq.Header.Set("Content-Type", "application/json")
+	addRec := httptest.NewRecorder()
+	h.AddService(addRec, addReq)
+	if addRec.Code != http.StatusCreated {
+		t.Fatalf("add service status = %d; want %d", addRec.Code, http.StatusCreated)
+	}
+
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/services/OldName", bytes.NewBufferString(`{"name":"NewName","url":"http://127.0.0.1:2","type":"http"}`))
+	updateReq.Header.Set("Content-Type", "application/json")
+	routeContext := chi.NewRouteContext()
+	routeContext.URLParams.Add("name", "OldName")
+	updateReq = updateReq.WithContext(context.WithValue(updateReq.Context(), chi.RouteCtxKey, routeContext))
+	updateRec := httptest.NewRecorder()
+	h.UpdateService(updateRec, updateReq)
+	if updateRec.Code != http.StatusOK {
+		t.Fatalf("update service status = %d; want %d (body=%s)", updateRec.Code, http.StatusOK, updateRec.Body.String())
+	}
+
+	after := h.currentOverview(context.Background())
+	if len(after.Services) != 1 {
+		t.Fatalf("services after update = %d; want 1", len(after.Services))
+	}
+	if after.Services[0].Name != "NewName" || after.Services[0].URL != "http://127.0.0.1:2" {
+		t.Fatalf("service after update = %#v; want renamed service", after.Services[0])
+	}
+
+	notFoundReq := httptest.NewRequest(http.MethodPut, "/api/services/OldName", bytes.NewBufferString(`{"name":"X","url":"http://127.0.0.1:3","type":"http"}`))
+	notFoundReq.Header.Set("Content-Type", "application/json")
+	notFoundCtx := chi.NewRouteContext()
+	notFoundCtx.URLParams.Add("name", "OldName")
+	notFoundReq = notFoundReq.WithContext(context.WithValue(notFoundReq.Context(), chi.RouteCtxKey, notFoundCtx))
+	notFoundRec := httptest.NewRecorder()
+	h.UpdateService(notFoundRec, notFoundReq)
+	if notFoundRec.Code != http.StatusNotFound {
+		t.Fatalf("update missing service status = %d; want %d", notFoundRec.Code, http.StatusNotFound)
+	}
+}
 
 func TestAddingServiceInvalidatesMonitoringSnapshot(t *testing.T) {
 	h := New(&config.Config{Port: 9876}, t.TempDir()+"/services.json")
