@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -35,6 +40,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -72,13 +78,42 @@ func main() {
 		if info, err := os.Stat(absStatic); err == nil && info.IsDir() {
 			log.Printf("serving static files from %s", absStatic)
 			fileServer := http.FileServer(http.Dir(absStatic))
-			r.Handle("/*", fileServer)
+			r.Group(func(r chi.Router) {
+				r.Use(cacheControl)
+				r.Handle("/*", fileServer)
+			})
 		}
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	h.Start(ctx)
+
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("starting server on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	srv := &http.Server{Addr: addr, Handler: r}
+	go func() {
+		<-ctx.Done()
+		log.Println("shutting down")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// cacheControl sets long-lived immutable caching for content-hashed build assets
+// and no-cache for everything else (index.html, API paths).
+func cacheControl(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
+		next.ServeHTTP(w, r)
+	})
 }

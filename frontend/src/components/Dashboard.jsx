@@ -638,9 +638,34 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
+    let interval = null
+
+    const startPolling = () => {
+      if (!interval) interval = setInterval(fetchAll, 5000)
+    }
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        fetchAll()
+        startPolling()
+      }
+    }
+
     fetchAll()
-    const interval = setInterval(fetchAll, 5000)
-    return () => clearInterval(interval)
+    startPolling()
+    document.addEventListener('visibilitychange', onVisibility)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      stopPolling()
+    }
   }, [fetchAll])
 
   const openServer = (s) => setPanel({ type: 'server', item: s })
