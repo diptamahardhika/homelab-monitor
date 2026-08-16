@@ -114,12 +114,31 @@ function CopyButton({ text }) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text)
+    const copied = () => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
+    }
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text)
+        copied()
+        return
+      }
+      throw new Error('clipboard API unavailable')
     } catch (_) {
-      // clipboard unavailable; ignore
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.setAttribute('readonly', '')
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      try {
+        document.execCommand('copy')
+        copied()
+      } finally {
+        document.body.removeChild(ta)
+      }
     }
   }
 
