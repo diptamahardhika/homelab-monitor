@@ -97,6 +97,32 @@ function LatencySparkline({ history, height = 32, width = 160 }) {
   )
 }
 
+function UptimeCard({ stats }) {
+  if (!stats) return null
+  const pct = isNaN(stats.uptime_percent) ? 0 : stats.uptime_percent
+  const ring = pct >= 99 ? 'emerald' : pct >= 95 ? 'amber' : 'rose'
+  const color = {
+    emerald: 'text-emerald-600 dark:text-emerald-400',
+    amber: 'text-amber-600 dark:text-amber-400',
+    rose: 'text-rose-600 dark:text-rose-400',
+  }[ring]
+  return (
+    <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-2">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Uptime (rolling window)</h3>
+      <div className="flex items-end justify-between">
+        <span className={`text-2xl font-bold ${color}`}>{pct.toFixed(1)}%</span>
+        <span className="text-xs text-gray-400">{stats.up_samples}/{stats.samples} up</span>
+      </div>
+      {stats.last_down && (
+        <p className="text-xs text-gray-500">Last down: {stats.last_down}</p>
+      )}
+      {!stats.last_down && (
+        <p className="text-xs text-gray-500">No outages recorded in window</p>
+      )}
+    </div>
+  )
+}
+
 function StatCard({ title, value, subtitle, accent, onClick }) {
   return (
     <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-5 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full">
@@ -125,7 +151,7 @@ function ServerCard({ server, onClick }) {
   )
 }
 
-function DetailPanel({ item, type, onClose, latencyHistory, statusHistory }) {
+function DetailPanel({ item, type, onClose, latencyHistory, historyStats }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -159,8 +185,8 @@ function DetailPanel({ item, type, onClose, latencyHistory, statusHistory }) {
 
         {item && (
           <div className="p-6 space-y-6">
-            {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} />}
-            {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} statusHistory={statusHistory} />}
+            {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} historyStats={historyStats} />}
+            {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} historyStats={historyStats} />}
             {type === 'container' && <ContainerDetail item={item} />}
             {type === 'system' && <SystemDetail stats={item} />}
           </div>
@@ -295,7 +321,7 @@ function DetailRow({ label, value, mono, href }) {
   )
 }
 
-function ServerDetail({ item, latencyHistory }) {
+function ServerDetail({ item, latencyHistory, historyStats }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -308,6 +334,7 @@ function ServerDetail({ item, latencyHistory }) {
         <DetailRow label="Latency" value={item.latency} />
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
+      {historyStats && <UptimeCard stats={historyStats} />}
       {latencyHistory && <LatencySparkline history={latencyHistory} />}
     </div>
   )
@@ -331,16 +358,15 @@ function formatBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function ServiceDetail({ item, latencyHistory, statusHistory }) {
-  const uptimePct = statusHistory && statusHistory.length > 0
-    ? Math.round((statusHistory.filter(Boolean).length / statusHistory.length) * 100) : null
+function ServiceDetail({ item, latencyHistory, historyStats }) {
+  const uptimePct = historyStats && !isNaN(historyStats.uptime_percent)
+    ? Math.round(historyStats.uptime_percent) : null
   const minLat = latencyHistory && latencyHistory.length > 0
     ? Math.min(...latencyHistory) : null
   const maxLat = latencyHistory && latencyHistory.length > 0
     ? Math.max(...latencyHistory) : null
   const avgLat = latencyHistory && latencyHistory.length > 0
     ? Math.round(latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length) : null
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -370,6 +396,7 @@ function ServiceDetail({ item, latencyHistory, statusHistory }) {
         {formatTime(item.last_checked) && <DetailRow label="Last Checked" value={formatTime(item.last_checked)} />}
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
+      {historyStats && <UptimeCard stats={historyStats} />}
       {latencyHistory && <LatencySparkline history={latencyHistory} />}
     </div>
   )
@@ -559,7 +586,7 @@ export default function Dashboard() {
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
   const latencyHistoryRef = useRef({})
-  const statusHistoryRef = useRef({})
+  const historyStatsRef = useRef({})
 
   const toggleTheme = () => {
     const next = !dark
@@ -577,22 +604,22 @@ export default function Dashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [srv, svc, dock, sys] = await Promise.all([
+      const [srv, svc, dock, sys, hist] = await Promise.all([
         fetch('/api/servers').then(r => r.json()),
         fetch('/api/services').then(r => r.json()),
         fetch('/api/docker').then(r => r.json()),
         fetch('/api/system').then(r => r.json()),
+        fetch('/api/history').then(r => r.json()).catch(() => ({})),
       ])
       setServers(Array.isArray(srv) ? srv : [])
       setServices(Array.isArray(svc) ? svc : [])
       setContainers(Array.isArray(dock) ? dock : [])
       setSystemStats(sys)
+      historyStatsRef.current = hist && typeof hist === 'object' ? hist : {}
 
       const newHistory = { ...latencyHistoryRef.current }
-      const newStatusHistory = { ...statusHistoryRef.current }
       for (const item of [...srv, ...svc]) {
         if (!newHistory[item.name]) newHistory[item.name] = []
-        if (!newStatusHistory[item.name]) newStatusHistory[item.name] = []
         const val = parseInt(item.latency, 10)
         if (!isNaN(val)) {
           newHistory[item.name].push(val)
@@ -600,13 +627,8 @@ export default function Dashboard() {
         if (newHistory[item.name].length > 30) {
           newHistory[item.name].shift()
         }
-        newStatusHistory[item.name].push(item.status === 'up')
-        if (newStatusHistory[item.name].length > 30) {
-          newStatusHistory[item.name].shift()
-        }
       }
       latencyHistoryRef.current = newHistory
-      statusHistoryRef.current = newStatusHistory
 
       setError(null)
     } catch (e) {
@@ -815,7 +837,7 @@ export default function Dashboard() {
         type={panel?.type}
         onClose={() => setPanel(null)}
         latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
-        statusHistory={statusHistoryRef.current[panel?.item?.name]}
+        historyStats={historyStatsRef.current[`${panel?.type}:${panel?.item?.name}`]}
       />
     </div>
   )

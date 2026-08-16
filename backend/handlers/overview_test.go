@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/pradiptamahardika/homelab-monitor/config"
 )
 
 func TestOverviewReturnsMonitoringSnapshot(t *testing.T) {

@@ -102,7 +102,7 @@ func CheckService(ctx context.Context, name, rawURL string, checkType string) Se
 			status.Error = err.Error()
 			return status
 		}
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 		resp.Body.Close()
 		status.ResponseSize = int64(len(body))
 		status.StatusCode = resp.StatusCode
