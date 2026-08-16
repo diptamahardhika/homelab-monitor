@@ -8,18 +8,22 @@ Built with a **Go** backend and a **React + Vite** frontend styled with **Tailwi
 
 - **Server monitoring** — TCP port reachability checks with configurable timeouts, expected status codes, and redirect handling
 - **Service monitoring** — HTTP health check endpoints (200-399 = up) with response size limiting (1 MB cap), TLS verification options, and numeric latency tracking
-- **Docker container monitoring** — real-time container status, logs, and stats via the Docker socket
+- **Docker container monitoring** — real-time container status and per-container stats (CPU, memory, network) via the Docker socket
 - **System resource monitoring** — real-time CPU, memory, and disk usage
-- **Latency sparklines** — time-series latency history for every server and service (numeric + formatted)
-- **Attention-first dashboard** — critical issues (down services, unhealthy containers, high resource usage) surfaced at the top
-- **Service dependency map** — visual graph with cycle detection; add/remove dependencies from the UI
-- **Configuration UI** — edit servers, services, and port directly from the dashboard (no SSH required)
-- **Container log viewer** — stream logs with auto-refresh, configurable tail lines, stderr/stdout colorization
-- **Custom dashboard layouts** — drag-drop section reordering, show/hide sections, persists to localStorage
-- **Improved empty states** — illustrated guidance for adding your first servers, services, and Docker
-- **REST API** — full CRUD for services, config, dependencies, and container logs
-- **Concurrent, bounded monitoring** — in-memory scheduler with coalesced refreshes and graceful context cancellation
-- **Single binary** — everything packaged into a multi-arch Docker image (amd64/arm64)
+- **Latency sparklines & trends** — time-series latency history for every server and service with min/avg/max and up/down trend arrows
+- **Uptime history** — rolling uptime percentage per server/service (default 300 samples) persisted to disk so it survives restarts
+- **Webhook alerting** — fires a webhook only when a server/service transitions up↔down (no spam on every poll); works with Discord/Slack webhooks
+- **Detail panel** — click any server, service, container, or the system stat card to open a slide-over with full details (close with ✕, backdrop click, or **Esc**)
+- **Search & sort** — filter services and containers by name, and sort columns by name, status, or latency
+- **Service management UI** — add, edit, and delete services directly from the dashboard (no SSH required) with in-row delete confirmation and toast feedback
+- **Copy-to-clipboard** — one-click copy for hostnames, URLs, IDs, and other values
+- **Live updates** — 5-second polling with a "last updated" indicator and pauses automatically when the tab is hidden
+- **Dark / light theme** — toggle with persisted preference (respects system preference by default)
+- **Per-section empty states** — helpful guidance when nothing is configured yet, plus search no-results states
+- **REST API** — full CRUD for services, config, and dependencies, plus uptime history
+- **Fast by default** — cached `/api/overview` snapshot with stale-while-revalidate serving, coalesced refreshes, shared HTTP/Docker clients, gzip compression, and long-lived immutable caching of hashed static assets
+- **Concurrent, bounded monitoring** — in-memory scheduler with a concurrency limit (6) and graceful context cancellation
+- **Single binary** — everything packaged into a single Docker image
 
 ## Project Structure
 
@@ -28,19 +32,16 @@ homelab-monitor/
 ├── backend/           # Go API server
 │   ├── main.go        # entry point, router, static file server
 │   ├── config/        # YAML config loader (with Save support)
-│   ├── handlers/      # HTTP handlers (health, servers, services, docker, config, dependencies)
-│   ├── monitor/       # monitoring logic (TCP ping, HTTP check, Docker client, logs)
+│   ├── handlers/      # HTTP handlers (overview, health, servers, services, docker, config, dependencies, history)
+│   ├── monitor/       # monitoring logic (TCP ping, HTTP check, Docker client, system stats, history, alerting, caching)
 │   └── dependencies/  # dependency graph store with cycle detection
 ├── frontend/          # React + Vite + Tailwind
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Dashboard.jsx        # main dashboard with AttentionBanner
-│   │   │   ├── ConfigEditor.jsx     # configuration UI
-│   │   │   ├── ContainerLogViewer.jsx  # log streaming
-│   │   │   ├── DependencyMap.jsx    # visual dependency graph
-│   │   │   └── LayoutEditor.jsx     # drag-drop layout editor
-│   │   ├── refresh.mjs              # visibility-aware refresh intervals
-│   │   └── ...
+│   │   │   └── Dashboard.jsx   # entire dashboard UI (detail panel, add/edit service modal, toasts)
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── index.css
 │   ├── index.html
 │   ├── vite.config.js
 │   └── package.json
@@ -139,27 +140,28 @@ services:
 | `follow_redirects` | services | `false` | Follow HTTP redirects |
 | `insecure_skip_verify` | services | `false` | Skip TLS certificate verification |
 
-**You can now edit all of the above directly from the dashboard Configuration UI (gear icon in toolbar).**
+Services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added services are persisted separately in `DATA_PATH`.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Backend health check |
-| GET | `/api/overview` | Cached snapshot of all dashboard data |
+| GET | `/api/overview` | Cached snapshot of all dashboard data (stale-while-revalidate) |
 | GET | `/api/servers` | List all configured servers |
 | GET | `/api/services` | List monitored services |
 | POST | `/api/services` | Add a service (JSON body) |
+| PUT | `/api/services/{name}` | Update an existing service |
 | DELETE | `/api/services/{name}` | Remove a service |
 | GET | `/api/docker` | List all Docker containers |
-| GET | `/api/docker/{id}` | Container details and stats |
-| GET | `/api/docker/{id}/logs` | Container logs (query: `?tail=N`, default 100) |
+| GET | `/api/docker/{id}` | Container details, stats, mounts, and environment |
 | GET | `/api/system` | Host system stats (CPU, memory, disk) |
 | GET | `/api/config` | Load current config (servers, services, port) |
 | PUT | `/api/config` | Update & persist config.yaml |
 | GET | `/api/dependencies` | List all service dependencies |
 | POST | `/api/dependencies` | Add dependency (`{from, to}`) with cycle detection |
 | DELETE | `/api/dependencies` | Remove dependency (`?from=X&to=Y`) |
+| GET | `/api/history` | Uptime stats for every tracked server and service |
 
 ### Service Management (POST /api/services)
 
@@ -170,6 +172,8 @@ services:
   "type": "http"
 }
 ```
+
+Services added via the UI are persisted to `DATA_PATH` (`extra_services.json`) and survive container restarts.
 
 ### Dependency Management (POST /api/dependencies)
 
@@ -195,8 +199,8 @@ volumes:
 
 ### Prerequisites
 
-- Go 1.21+
-- Node.js 20+
+- Go 1.25+
+- Node.js 24+
 - Docker (optional, for containerized runs)
 
 ### Backend
@@ -220,9 +224,6 @@ The Vite dev server runs the web UI on **http://localhost:5173** and proxies `/a
 ```bash
 # Backend tests
 cd backend && go test ./...
-
-# Frontend tests
-cd frontend && node --test src/refresh.test.mjs
 ```
 
 ## Build from Source
@@ -244,7 +245,7 @@ ghcr.io/diptamahardhika/homelab-monitor:latest
 ghcr.io/diptamahardhika/homelab-monitor:v0.1.0
 ```
 
-Every push to `master` builds a new `latest` image for `linux/amd64` and `linux/arm64`. Tagged releases (`v*`) are also published with semver tags.
+Every push to `master` builds a new `latest` image for `linux/amd64`. Tagged releases (`v*`) are also published with semver tags.
 
 ## Environment Variables
 
@@ -253,19 +254,24 @@ Every push to `master` builds a new `latest` image for `linux/amd64` and `linux/
 | `CONFIG_PATH` | `/app/config.yaml` | Path to the configuration file |
 | `STATIC_DIR` | `/app/static` | Path to the frontend static files |
 | `DATA_PATH` | `/app/data/extra_services.json` | Path to persist UI-added services |
+| `ALERT_WEBHOOK_URL` | (empty) | Webhook URL to receive up/down alerts (Discord/Slack compatible) |
 
-## Dashboard Toolbar
+## Dashboard
 
-The header includes quick-access buttons:
+The dashboard gives you an at-a-glance view of your infrastructure:
 
-| Icon | Feature | Description |
-|------|---------|-------------|
-| ⚙️ | **Configuration** | Edit servers, services, port |
-| 📊 | **Dependencies** | Visual service dependency map |
-| 📦 | **Layout** | Drag-drop section reordering |
-| 🔄 | **Refresh** | Manual data refresh |
-| 🌙/☀️ | **Theme** | Toggle dark/light mode |
+- **Stat cards** — servers up/total, services up/total, running containers/total, and system CPU% (click System to open its detail panel)
+- **Servers** — card per server with host:port, latency, trend arrow, and reachability dot
+- **Services** — sortable table with name, status badge, status code, and latency; search, add, edit, and delete (with confirmation) right from the section
+- **Docker Containers** — sortable table with name, state, status text, and ports; searchable
+- **Detail panel** — click any item to open a slide-over with full details: uptime percentage, latency sparkline (min/avg/max), resolved IP, response size, container performance stats, mounts, and environment variables. Close with the ✕ button, clicking the backdrop, or pressing **Esc**.
+- **Header** — theme toggle (dark/light), manual refresh button, and a live "last updated" indicator
 
-## Attention Banner
+## Alerting
 
-When issues are detected (down services, unhealthy containers, CPU/memory/disk > 90%), a red banner appears at the top with clickable alert chips and quick-action buttons.
+Set `ALERT_WEBHOOK_URL` to a Discord or Slack-style webhook to get notified when a server or service goes down or comes back up. Alerts fire only on **status transitions** (up↔down), not on every poll, and the first observation after startup is treated as a baseline (no alert on boot). The payload includes both `content` (Discord) and `text` (Slack/generic) fields so the same URL works across providers.
+
+```
+🔴 [service] My App is DOWN — connection refused
+🟢 [server] Localhost is back UP
+```

@@ -266,6 +266,15 @@ function DetailPanel({ item, type, onClose, onEdit, latencyHistory, historyStats
     setTimeout(onClose, 200)
   }
 
+  useEffect(() => {
+    if (!item) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') handleClose()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [item, handleClose])
+
   return (
     <div className={`fixed inset-0 z-50 flex justify-end pointer-events-none ${visible ? 'pointer-events-auto' : ''}`} role="dialog">
       <div
