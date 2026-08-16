@@ -821,3 +821,4 @@ export default function Dashboard() {
   )
 }
 // ssh-sign-v2
+// Dashboard.jsx — network speed fix (signed)
