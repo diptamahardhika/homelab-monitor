@@ -55,6 +55,7 @@ func main() {
 		r.Get("/servers", h.Servers)
 		r.Get("/services", h.Services)
 		r.Post("/services", h.AddService)
+		r.Put("/services/{name}", h.UpdateService)
 		r.Delete("/services/{name}", h.DeleteService)
 		r.Get("/docker", h.DockerContainers)
 		r.Get("/docker/{id}", h.DockerContainerDetail)

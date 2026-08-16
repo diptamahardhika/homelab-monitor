@@ -97,6 +97,51 @@ function LatencySparkline({ history, height = 32, width = 160 }) {
   )
 }
 
+function Trend({ history }) {
+  if (!history || history.length < 2) return null
+  const last = history[history.length - 1]
+  const prev = history[history.length - 2]
+  if (last === prev) return <span className="text-gray-400" title="No change">→</span>
+  const worse = last > prev
+  return (
+    <span className={worse ? 'text-red-500' : 'text-emerald-500'} title={worse ? 'Latency increased' : 'Latency decreased'}>
+      {worse ? '↑' : '↓'}
+    </span>
+  )
+}
+
+function CopyButton({ text }) {
+  const [copied, setCopied] = useState(false)
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (_) {
+      // clipboard unavailable; ignore
+    }
+  }
+
+  return (
+    <button
+      onClick={copy}
+      className={`p-1 rounded transition-colors ${copied ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+      title={copied ? 'Copied!' : 'Copy to clipboard'}
+    >
+      {copied ? (
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 function UptimeCard({ stats }) {
   if (!stats) return null
   const pct = isNaN(stats.uptime_percent) ? 0 : stats.uptime_percent
@@ -143,7 +188,48 @@ function EmptyState({ title, hint, action }) {
   )
 }
 
-function ServerCard({ server, onClick }) {
+function SortIcon({ active, dir }) {
+  const color = active ? 'text-emerald-500' : 'text-gray-400'
+  if (active && dir === 'asc') {
+    return (
+      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 5v14M5 12l7-7 7 7" />
+      </svg>
+    )
+  }
+  if (active && dir === 'desc') {
+    return (
+      <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 19V5M5 12l7 7 7-7" />
+      </svg>
+    )
+  }
+  return (
+    <svg className={`w-3 h-3 ${color}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6l4-4 4 4M8 18l4 4 4-4" />
+    </svg>
+  )
+}
+
+function SortHeader({ label, sortKey, sort, onSort, className }) {
+  const active = sort.key === sortKey
+  return (
+    <th className={`py-3 px-2 ${className || ''}`}>
+      <button
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 uppercase tracking-wider text-xs font-medium transition-colors ${
+          active ? 'text-gray-900 dark:text-white' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+        }`}
+        title={`Sort by ${label}${active ? ` (${sort.dir === 'asc' ? 'ascending' : 'descending'})` : ''}`}
+      >
+        {label}
+        <SortIcon active={active} dir={sort.dir} />
+      </button>
+    </th>
+  )
+}
+
+function ServerCard({ server, onClick, latencyHistory }) {
   return (
     <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-4 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full">
       <div className="flex items-center justify-between">
@@ -152,7 +238,10 @@ function ServerCard({ server, onClick }) {
           <p className="mt-0.5 text-sm text-gray-500 truncate">{server.host}{server.port ? `:${server.port}` : ''}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
-          <span className="text-xs text-gray-400">{server.latency || '—'}</span>
+          <span className="text-xs text-gray-400 flex items-center gap-1">
+            {server.latency || '—'}
+            <Trend history={latencyHistory} />
+          </span>
           <Dot alive={server.alive} />
         </div>
       </div>
@@ -161,7 +250,7 @@ function ServerCard({ server, onClick }) {
   )
 }
 
-function DetailPanel({ item, type, onClose, latencyHistory, historyStats }) {
+function DetailPanel({ item, type, onClose, onEdit, latencyHistory, historyStats }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -188,9 +277,18 @@ function DetailPanel({ item, type, onClose, latencyHistory, historyStats }) {
       >
         <div className="sticky top-0 z-10 flex items-center justify-between bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate pr-4">{item?.name || item?.title}</h2>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {type === 'service' && onEdit && (
+              <button onClick={onEdit}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 dark:border-gray-800 px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Edit
+              </button>
+            )}
+            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-white transition-colors shrink-0 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
         </div>
 
         {item && (
@@ -318,7 +416,7 @@ function SystemDetail({ stats }) {
   )
 }
 
-function DetailRow({ label, value, mono, href }) {
+function DetailRow({ label, value, mono, href, copyable }) {
   if (value === undefined || value === null || value === '') return null
   const content = href
     ? <a href={href} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-600 dark:hover:text-emerald-400 underline underline-offset-2 transition-colors">{value}</a>
@@ -326,7 +424,10 @@ function DetailRow({ label, value, mono, href }) {
   return (
     <div className="flex justify-between items-start gap-4 py-2 border-b border-gray-100 dark:border-gray-800/50 last:border-0">
       <span className="text-sm text-gray-500 shrink-0">{label}</span>
-      <span className={`text-sm text-gray-900 dark:text-white text-right max-w-[60%] break-all ${mono ? 'font-mono text-xs' : ''}`}>{content}</span>
+      <span className="flex items-start gap-1.5 max-w-[60%]">
+        <span className={`text-sm text-gray-900 dark:text-white text-right break-all ${mono ? 'font-mono text-xs' : ''}`}>{content}</span>
+        {copyable && <CopyButton text={String(value)} />}
+      </span>
     </div>
   )
 }
@@ -339,7 +440,7 @@ function ServerDetail({ item, latencyHistory, historyStats }) {
         <span className="text-sm text-gray-500">{item.alive ? 'Reachable' : 'Unreachable'}</span>
       </div>
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
-        <DetailRow label="Host" value={`${item.host}${item.port ? `:${item.port}` : ''}`} mono />
+        <DetailRow label="Host" value={`${item.host}${item.port ? `:${item.port}` : ''}`} mono copyable />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Latency" value={item.latency || '—'} />
         {item.error && <DetailRow label="Error" value={item.error} />}
@@ -405,11 +506,11 @@ function ServiceDetail({ item, latencyHistory, historyStats }) {
         </div>
       )}
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
-        <DetailRow label="URL" value={item.url} mono href={item.url} />
+        <DetailRow label="URL" value={item.url} mono href={item.url} copyable />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Status Code" value={item.status_code} />
         <DetailRow label="Latency" value={item.latency || '—'} />
-        <DetailRow label="Resolved IP" value={item.resolved_ip} mono />
+        <DetailRow label="Resolved IP" value={item.resolved_ip} mono copyable />
         {formatBytes(item.response_size) && <DetailRow label="Response Size" value={formatBytes(item.response_size)} />}
         {formatTime(item.last_checked) && <DetailRow label="Last Checked" value={formatTime(item.last_checked)} />}
         {item.error && <DetailRow label="Error" value={item.error} />}
@@ -452,15 +553,15 @@ function ContainerDetail({ item }) {
       </div>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
-        <DetailRow label="ID" value={d.id} mono />
-        <DetailRow label="Image" value={d.image} mono />
+        <DetailRow label="ID" value={d.id} mono copyable />
+        <DetailRow label="Image" value={d.image} mono copyable />
         {d.command && <DetailRow label="Command" value={d.command} mono />}
         {d.created && <DetailRow label="Created" value={d.created} />}
         {d.uptime && <DetailRow label="Uptime" value={d.uptime} />}
-        {d.ports && <DetailRow label="Ports" value={d.ports} mono />}
+        {d.ports && <DetailRow label="Ports" value={d.ports} mono copyable />}
         {d.pid > 0 && <DetailRow label="PID" value={d.pid} />}
         {d.network && <DetailRow label="Network" value={d.network} />}
-        {d.ip && <DetailRow label="IP Address" value={d.ip} mono />}
+        {d.ip && <DetailRow label="IP Address" value={d.ip} mono copyable />}
       </div>
 
       {d.stats && (
@@ -516,10 +617,11 @@ function ContainerDetail({ item }) {
   )
 }
 
-function AddServiceModal({ onClose, onAdded }) {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const [type, setType] = useState('http')
+function AddServiceModal({ initial, onClose, onAdded, onError }) {
+  const isEdit = Boolean(initial)
+  const [name, setName] = useState(initial?.name || '')
+  const [url, setUrl] = useState(initial?.url || '')
+  const [type, setType] = useState(initial?.type || 'http')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState(null)
 
@@ -528,18 +630,18 @@ function AddServiceModal({ onClose, onAdded }) {
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch('/api/services', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/services/${encodeURIComponent(initial.name)}` : '/api/services', {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, url, type }),
       })
       if (!res.ok) {
-        let errMsg = 'Failed to add service'
+        let errMsg = isEdit ? 'Failed to update service' : 'Failed to add service'
         try {
           const data = await res.json()
           errMsg = data.error || errMsg
         } catch (_) {
-          errMsg = `Failed to add service (${res.status})`
+          errMsg = `${isEdit ? 'Failed to update service' : 'Failed to add service'} (${res.status})`
         }
         throw new Error(errMsg)
       }
@@ -547,6 +649,7 @@ function AddServiceModal({ onClose, onAdded }) {
       onClose()
     } catch (err) {
       setError(err.message)
+      if (onError) onError(err.message)
     } finally {
       setAdding(false)
     }
@@ -556,7 +659,7 @@ function AddServiceModal({ onClose, onAdded }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog">
       <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Service</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{isEdit ? 'Edit Service' : 'Add Service'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
@@ -584,7 +687,7 @@ function AddServiceModal({ onClose, onAdded }) {
             </button>
             <button type="submit" disabled={adding}
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
-              {adding ? 'Adding...' : 'Add'}
+              {adding ? 'Saving...' : isEdit ? 'Save' : 'Add'}
             </button>
           </div>
         </form>
@@ -603,11 +706,24 @@ export default function Dashboard() {
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
+  const [editingService, setEditingService] = useState(null)
   const [confirmingDelete, setConfirmingDelete] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [now, setNow] = useState(Date.now())
+  const [servicesSearch, setServicesSearch] = useState('')
+  const [containersSearch, setContainersSearch] = useState('')
+  const [servicesSort, setServicesSort] = useState({ key: 'name', dir: 'asc' })
+  const [containersSort, setContainersSort] = useState({ key: 'status', dir: 'asc' })
+  const [toast, setToast] = useState(null)
+  const toastTimer = useRef(null)
   const latencyHistoryRef = useRef({})
   const historyStatsRef = useRef({})
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type })
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 3500)
+  }
 
   const toggleTheme = () => {
     const next = !dark
@@ -703,11 +819,27 @@ export default function Dashboard() {
   const confirmDelete = async (name) => {
     setConfirmingDelete(null)
     try {
-      await fetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const res = await fetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        let msg = `Failed to delete (${res.status})`
+        try {
+          const data = await res.json()
+          msg = data.error || msg
+        } catch (_) {}
+        throw new Error(msg)
+      }
+      showToast(`Deleted "${name}"`)
       fetchAll()
     } catch (e) {
-      // ignore
+      showToast(e.message || 'Failed to delete', 'error')
     }
+  }
+
+  const openEditService = () => {
+    const s = panel?.item
+    if (!s) return
+    setPanel(null)
+    setEditingService({ name: s.name, url: s.url, type: s.type })
   }
 
   const cpuPct = systemStats?.cpu_usage_percent ?? 0
@@ -724,6 +856,48 @@ export default function Dashboard() {
   const scrollToSection = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
+
+  const statusRank = (status) => status === 'down' ? 0 : status === 'degraded' ? 1 : 2
+  const containerRank = (state) => {
+    const ranks = { running: 0, restarting: 1, paused: 2, created: 3, exited: 4, dead: 5 }
+    return ranks[state] ?? 6
+  }
+
+  const filterAndSort = (items, search, sort, nameFn, rankFn, latencyFn, stateFn, statusTextFn, pinFirst) => {
+    const q = search.trim().toLowerCase()
+    const filtered = q ? items.filter(it => (nameFn(it) || '').toLowerCase().includes(q)) : items
+    const sorted = [...filtered]
+    const dir = sort.dir === 'desc' ? -1 : 1
+    const cmp = (a, b) => a < b ? -1 : a > b ? 1 : 0
+    if (sort.key === 'status') {
+      sorted.sort((a, b) => {
+        if (pinFirst) {
+          const aPinned = rankFn(a) === 0
+          const bPinned = rankFn(b) === 0
+          if (aPinned !== bPinned) return aPinned ? -1 : 1
+        }
+        return (rankFn(a) - rankFn(b)) * dir || String(nameFn(a)).localeCompare(String(nameFn(b)))
+      })
+    } else if (sort.key === 'state') {
+      sorted.sort((a, b) => String(stateFn(a) || '').localeCompare(String(stateFn(b) || '')) * dir)
+    } else if (sort.key === 'statustext') {
+      sorted.sort((a, b) => String(statusTextFn(a) || '').localeCompare(String(statusTextFn(b) || '')) * dir)
+    } else if (sort.key === 'latency') {
+      sorted.sort((a, b) => cmp(latencyFn(a) || Infinity, latencyFn(b) || Infinity) * dir || String(nameFn(a)).localeCompare(String(nameFn(b))))
+    } else {
+      sorted.sort((a, b) => String(nameFn(a)).localeCompare(String(nameFn(b))) * dir)
+    }
+    return sorted
+  }
+
+  const toggleSort = (setter, key) => {
+    setter(prev => prev.key === key
+      ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: 'asc' })
+  }
+
+  const visibleServices = filterAndSort(services, servicesSearch, servicesSort, s => s.name, statusRank, s => parseInt(s.latency, 10))
+  const visibleContainers = filterAndSort(containers, containersSearch, containersSort, c => c.name || c.id, containerRank, c => null, c => c.state, c => c.status, true)
 
   if (loading) {
     return (
@@ -785,10 +959,12 @@ export default function Dashboard() {
       </div>
 
       <section id="servers-section" className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          Servers <span className="text-sm font-normal text-gray-400">({servers.length})</span>
+        </h2>
         {servers.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
+            {servers.map((s, i) => <ServerCard key={i} server={s} latencyHistory={latencyHistoryRef.current[s.name]} onClick={() => openServer(s)} />)}
           </div>
         ) : (
           <EmptyState
@@ -799,27 +975,41 @@ export default function Dashboard() {
       </section>
 
       <section id="services-section" className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
-          <button onClick={() => setShowAddService(true)}
-            className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
-            + Add Service
-          </button>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Services <span className="text-sm font-normal text-gray-400">({services.length})</span>
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={servicesSearch}
+              onChange={e => setServicesSearch(e.target.value)}
+              placeholder="Search services..."
+              className="w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+            />
+            <button onClick={() => setShowAddService(true)}
+              className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+              + Add Service
+            </button>
+          </div>
         </div>
         {services.length > 0 ? (
+          visibleServices.length === 0 ? (
+            <EmptyState title="No services match your search" hint="Try a different search term." />
+          ) : (
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-1/2">Service</th>
-                  <th className="py-3 px-2">Status</th>
+                  <SortHeader label="Service" sortKey="name" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
+                  <SortHeader label="Status" sortKey="status" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} />
                   <th className="py-3 px-2">Code</th>
-                  <th className="py-3 px-2">Latency</th>
+                  <SortHeader label="Latency" sortKey="latency" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} />
                   <th className="py-3 pr-4 pl-2 w-28"></th>
                 </tr>
               </thead>
               <tbody>
-                {services.map((s, i) => (
+                {visibleServices.map((s, i) => (
                   <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
                     <td className="py-0 pl-4 pr-2">
                       <button onClick={() => openService(s)} className="group flex items-center w-full py-3 text-left">
@@ -834,7 +1024,12 @@ export default function Dashboard() {
                     </td>
                     <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
                     <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
-                    <td className="py-3 px-2 text-sm text-gray-500">{s.latency || '—'}</td>
+                    <td className="py-3 px-2 text-sm text-gray-500 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        {s.latency || '—'}
+                        <Trend history={latencyHistoryRef.current[s.name]} />
+                      </span>
+                    </td>
                     <td className="py-3 pr-4 pl-2 w-28 whitespace-nowrap">
                       {confirmingDelete === s.name ? (
                         <div className="flex items-center justify-center gap-1.5">
@@ -866,6 +1061,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+          )
         ) : (
           <EmptyState
             title="No services being monitored"
@@ -881,20 +1077,36 @@ export default function Dashboard() {
       </section>
 
       <section id="containers-section" className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Docker Containers <span className="text-sm font-normal text-gray-400">({containers.length})</span>
+          </h2>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={containersSearch}
+              onChange={e => setContainersSearch(e.target.value)}
+              placeholder="Search containers..."
+              className="w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+            />
+          </div>
+        </div>
         {containers.length > 0 ? (
+          visibleContainers.length === 0 ? (
+            <EmptyState title="No containers match your search" hint="Try a different search term." />
+          ) : (
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-1/2">Container</th>
-                  <th className="py-3 px-2">State</th>
-                  <th className="py-3 px-2">Status</th>
+                  <SortHeader label="Container" sortKey="name" sort={containersSort} onSort={k => toggleSort(setContainersSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
+                  <SortHeader label="State" sortKey="status" sort={containersSort} onSort={k => toggleSort(setContainersSort, k)} />
+                  <SortHeader label="Status" sortKey="statustext" sort={containersSort} onSort={k => toggleSort(setContainersSort, k)} />
                   <th className="py-3 pl-2 pr-4">Ports</th>
                 </tr>
               </thead>
               <tbody>
-                {containers.map((c, i) => (
+                {visibleContainers.map((c, i) => (
                   <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
                     <td className="py-0 pl-4 pr-2">
                       <button onClick={() => openContainer(c)} className="group flex items-center w-full py-3 text-left">
@@ -913,6 +1125,7 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
+          )
         ) : (
           <EmptyState
             title="No containers detected"
@@ -921,14 +1134,34 @@ export default function Dashboard() {
         )}
       </section>
 
-      {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={fetchAll} />}
+      {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={() => { fetchAll(); showToast('Service added') }} onError={msg => showToast(msg, 'error')} />}
+      {editingService && <AddServiceModal initial={editingService} onClose={() => setEditingService(null)} onAdded={() => { fetchAll(); showToast('Service updated') }} onError={msg => showToast(msg, 'error')} />}
       <DetailPanel
         item={panel?.item}
         type={panel?.type}
         onClose={() => setPanel(null)}
+        onEdit={openEditService}
         latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
         historyStats={historyStatsRef.current[`${panel?.type}:${panel?.item?.name}`]}
       />
+
+      {toast && (
+        <div
+          className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm shadow-xl transition-opacity duration-200 ${
+            toast.type === 'error'
+              ? 'border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/80 text-red-700 dark:text-red-400'
+              : 'border-emerald-200 dark:border-emerald-800/50 bg-emerald-50 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-400'
+          }`}
+          role="status"
+        >
+          {toast.type === 'error' ? (
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          ) : (
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          )}
+          <span className="min-w-0">{toast.message}</span>
+        </div>
+      )}
     </div>
   )
 }
