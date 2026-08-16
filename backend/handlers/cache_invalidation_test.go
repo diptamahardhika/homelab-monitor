@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/pradiptamahardika/homelab-monitor/config"
 	"github.com/go-chi/chi/v5"
 )
 

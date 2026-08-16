@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diptamahardhika/homelab-monitor/backend/config"
+	"github.com/pradiptamahardika/homelab-monitor/config"
 )
 
 func TestCheckServerHTTPRespectsContextCancellation(t *testing.T) {
@@ -26,10 +26,9 @@ func TestCheckServerHTTPRespectsContextCancellation(t *testing.T) {
 		Host: "127.0.0.1",
 		Port: server.Listener.Addr().(*net.TCPAddr).Port,
 		Type: "http",
-		Timeout: 100 * time.Millisecond,
 	}
 
-	status := CheckServer(ctx, serverConfig)
+	status := CheckServer(ctx, serverConfig.Name, serverConfig.Host, serverConfig.Port, serverConfig.Type)
 	if status.Alive {
 		t.Fatalf("expected cancelled request to fail, got alive=true")
 	}
@@ -44,13 +43,12 @@ func TestCheckServiceHTTPUsesLimitReader(t *testing.T) {
 	defer server.Close()
 
 	serviceConfig := config.Service{
-		Name:   "test",
-		URL:    server.URL,
-		Type:   "http",
-		Timeout: 5 * time.Second,
+		Name: "test",
+		URL:  server.URL,
+		Type: "http",
 	}
 
-	status := CheckService(context.Background(), serviceConfig)
+	status := CheckService(context.Background(), serviceConfig.Name, serviceConfig.URL, serviceConfig.Type)
 
 	// Should not crash and should have a response size capped reasonably
 	if status.Status != "up" {
@@ -71,13 +69,12 @@ func TestCheckServiceHTTPRespectsContextCancellation(t *testing.T) {
 	defer cancel()
 
 	serviceConfig := config.Service{
-		Name:   "test",
-		URL:    server.URL,
-		Type:   "http",
-		Timeout: 100 * time.Millisecond,
+		Name: "test",
+		URL:  server.URL,
+		Type: "http",
 	}
 
-	status := CheckService(ctx, serviceConfig)
+	status := CheckService(ctx, serviceConfig.Name, serviceConfig.URL, serviceConfig.Type)
 	if status.Status == "up" {
 		t.Fatalf("expected cancelled request to fail, got status=up")
 	}

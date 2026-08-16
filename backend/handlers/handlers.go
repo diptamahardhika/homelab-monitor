@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/diptamahardhika/homelab-monitor/backend/config"
-	"github.com/diptamahardhika/homelab-monitor/backend/dependencies"
-	"github.com/diptamahardhika/homelab-monitor/backend/monitor"
 	"github.com/go-chi/chi/v5"
+	"github.com/pradiptamahardika/homelab-monitor/config"
+	"github.com/pradiptamahardika/homelab-monitor/dependencies"
+	"github.com/pradiptamahardika/homelab-monitor/monitor"
 )
 
 const (
@@ -79,14 +78,14 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 			if server.Gateway == "docker" {
 				dialHost = monitor.GetDockerGatewayIP(ctx)
 			}
-			overview.Servers[i] = monitor.CheckServer(ctx, server, dialHost)
+			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, dialHost)
 			return nil
 		})
 	}
 	for i, service := range services {
 		i, service := i, service
 		tasks = append(tasks, func(ctx context.Context) error {
-			overview.Services[i] = monitor.CheckService(ctx, service)
+			overview.Services[i] = monitor.CheckService(ctx, service.Name, service.URL, service.Type)
 			return nil
 		})
 	}
@@ -170,15 +169,39 @@ func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
-	overview := h.currentOverview(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	results := make([]monitor.ServerStatus, len(h.cfg.Servers))
+	for i, s := range h.cfg.Servers {
+		dialHost := ""
+		if s.Gateway == "docker" {
+			dialHost = monitor.GetDockerGatewayIP(ctx)
+		}
+		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, dialHost)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(overview.Servers)
+	json.NewEncoder(w).Encode(results)
 }
 
 func (h *Handler) Services(w http.ResponseWriter, r *http.Request) {
-	overview := h.currentOverview(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	h.mu.RLock()
+	allSvcs := make([]config.Service, 0, len(h.cfg.Services)+len(h.extraServices))
+	allSvcs = append(allSvcs, h.cfg.Services...)
+	allSvcs = append(allSvcs, h.extraServices...)
+	h.mu.RUnlock()
+
+	results := make([]monitor.ServiceStatus, len(allSvcs))
+	for i, s := range allSvcs {
+		results[i] = monitor.CheckService(ctx, s.Name, s.URL, s.Type)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(overview.Services)
+	json.NewEncoder(w).Encode(results)
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {
@@ -241,9 +264,18 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DockerContainers(w http.ResponseWriter, r *http.Request) {
-	overview := h.currentOverview(r.Context())
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	containers, err := monitor.GetDockerContainers(ctx)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]struct{}{})
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(overview.Containers)
+	json.NewEncoder(w).Encode(containers)
 }
 
 func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) {
@@ -261,32 +293,6 @@ func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(detail)
-}
-
-func (h *Handler) ContainerLogs(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	
-	tailStr := r.URL.Query().Get("tail")
-	tailLines := 100
-	if tailStr != "" {
-		if n, err := strconv.Atoi(tailStr); err == nil && n > 0 {
-			tailLines = n
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-
-	logs, err := monitor.GetContainerLogs(ctx, id, tailLines)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Write([]byte(logs))
 }
 
 func (h *Handler) System(w http.ResponseWriter, r *http.Request) {
@@ -338,18 +344,6 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 		if s.Type != "tcp" && s.Type != "http" {
 			jsonError(w, "service type must be tcp or http", http.StatusBadRequest)
 			return
-		}
-	}
-
-	// Apply defaults
-	for i := range req.Servers {
-		if req.Servers[i].Timeout == 0 {
-			req.Servers[i].Timeout = 5 * time.Second
-		}
-	}
-	for i := range req.Services {
-		if req.Services[i].Timeout == 0 {
-			req.Services[i].Timeout = 10 * time.Second
 		}
 	}
 

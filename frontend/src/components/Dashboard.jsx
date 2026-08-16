@@ -1,58 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import ConfigEditor from './ConfigEditor'
-import ContainerLogViewer from './ContainerLogViewer'
-import DependencyMap from './DependencyMap'
-
-const DEFAULT_LAYOUT = [
-  { id: 'stats', label: 'Stat Cards', visible: true },
-  { id: 'servers', label: 'Servers', visible: true },
-  { id: 'services', label: 'Services', visible: true },
-  { id: 'containers', label: 'Containers', visible: true },
-]
-
-function AlertTriangleIcon() {
-  return (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  )
-}
-
-function AlertCircleIcon() {
-  return (
-    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-    </svg>
-  )
-}
-
-function DragHandle() {
-  return (
-    <svg className="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-grab active:cursor-grabbing" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <circle cx="9" cy="5" r="1" />
-      <circle cx="15" cy="5" r="1" />
-      <circle cx="9" cy="12" r="1" />
-      <circle cx="15" cy="12" r="1" />
-      <circle cx="9" cy="19" r="1" />
-      <circle cx="15" cy="19" r="1" />
-    </svg>
-  )
-}
-
-function EyeIcon({ open }) {
-  return (
-    <svg className="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      {open ? (
-        <>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </>
-      ) : (
-        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-      )}
-    </svg>
-  )
-}
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 function SunIcon() {
   return (
@@ -272,6 +218,13 @@ function Bar({ value, label, valueLabel, color, total }) {
   )
 }
 
+function formatSpeed(bytesPerSec) {
+  if (!bytesPerSec || bytesPerSec <= 0) return '0 B/s'
+  if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(1)} B/s`
+  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`
+  return `${(bytesPerSec / (1024 * 1024)).toFixed(2)} MB/s`
+}
+
 function SystemDetail({ stats }) {
   if (!stats) return null
 
@@ -302,6 +255,26 @@ function SystemDetail({ stats }) {
         />
       </div>
 
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Network</h3>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+              <span className="text-sm text-gray-500">Download</span>
+            </div>
+            <span className="text-sm font-mono text-gray-900 dark:text-white">{formatSpeed(stats.network_rx_speed)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+              <span className="text-sm text-gray-500">Upload</span>
+            </div>
+            <span className="text-sm font-mono text-gray-900 dark:text-white">{formatSpeed(stats.network_tx_speed)}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">Details</h3>
         <div className="grid grid-cols-2 gap-4">
@@ -324,6 +297,10 @@ function SystemDetail({ stats }) {
           <div>
             <p className="text-xs text-gray-500">CPU Cores</p>
             <p className="text-sm text-gray-900 dark:text-white">{stats.cpu_count}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">IP Address</p>
+            <p className="text-sm font-mono text-gray-900 dark:text-white truncate">{stats.ip_address || '-'}</p>
           </div>
         </div>
       </div>
@@ -363,18 +340,60 @@ function ServerDetail({ item, latencyHistory, historyStats }) {
   )
 }
 
+function formatTime(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  const now = new Date()
+  const diff = (now - d) / 1000
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
+}
+
+function formatBytes(n) {
+  if (!n || n <= 0) return null
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function ServiceDetail({ item, latencyHistory, historyStats }) {
+  const uptimePct = historyStats && !isNaN(historyStats.uptime_percent)
+    ? Math.round(historyStats.uptime_percent) : null
+  const minLat = latencyHistory && latencyHistory.length > 0
+    ? Math.min(...latencyHistory) : null
+  const maxLat = latencyHistory && latencyHistory.length > 0
+    ? Math.max(...latencyHistory) : null
+  const avgLat = latencyHistory && latencyHistory.length > 0
+    ? Math.round(latencyHistory.reduce((a, b) => a + b, 0) / latencyHistory.length) : null
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <StatusBadge status={item.status} />
         <span className="text-sm text-gray-500">{item.status === 'up' ? 'Healthy' : item.status === 'down' ? 'Down' : 'Degraded'}</span>
+        {uptimePct !== null && (
+          <span className="ml-auto text-xs font-medium text-gray-400">
+            {uptimePct}% uptime
+          </span>
+        )}
       </div>
+      {latencyHistory && latencyHistory.length > 0 && (
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span>min <strong className="text-gray-300">{minLat}ms</strong></span>
+          <span>avg <strong className="text-gray-300">{avgLat}ms</strong></span>
+          <span>max <strong className="text-gray-300">{maxLat}ms</strong></span>
+          <span className="ml-auto">{latencyHistory.length}/30 polls</span>
+        </div>
+      )}
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
         <DetailRow label="URL" value={item.url} mono href={item.url} />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Status Code" value={item.status_code} />
         <DetailRow label="Latency" value={item.latency} />
+        <DetailRow label="Resolved IP" value={item.resolved_ip} mono />
+        {formatBytes(item.response_size) && <DetailRow label="Response Size" value={formatBytes(item.response_size)} />}
+        {formatTime(item.last_checked) && <DetailRow label="Last Checked" value={formatTime(item.last_checked)} />}
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
       {historyStats && <UptimeCard stats={historyStats} />}
@@ -446,7 +465,7 @@ function ContainerDetail({ item }) {
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">Network</span>
             <span className="font-mono text-gray-900 dark:text-white">
-              ↓{d.stats.network_rx_mb} MB / ↑{d.stats.network_tx_mb} MB
+              {formatSpeed(d.stats.network_rx_speed)} / {formatSpeed(d.stats.network_tx_speed)}
             </span>
           </div>
         </div>
@@ -556,188 +575,6 @@ function AddServiceModal({ onClose, onAdded }) {
   )
 }
 
-function AttentionBanner({ downServers, downServices, runningContainers, containers, systemStats, onRefresh, onAddService }) {
-  const hasAlerts = downServers.length > 0 || downServices.length > 0 || (containers.length > 0 && containers.some(c => c.state !== 'running' && c.state !== 'exited')) || (systemStats && (systemStats.memory_used_percent > 90 || systemStats.disk_used_percent > 90 || systemStats.cpu_usage_percent > 90))
-  
-  if (!hasAlerts) return null
-
-  const criticalCount = downServers.length + downServices.length + (containers.filter(c => c.state !== 'running' && c.state !== 'exited').length)
-  const warningCount = (systemStats && (systemStats.memory_used_percent > 90 || systemStats.disk_used_percent > 90 || systemStats.cpu_usage_percent > 90)) ? 1 : 0
-
-  return (
-    <div className="mb-6 rounded-xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/30 p-4 transition-all" role="alert">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="flex-shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30">
-              <AlertTriangleIcon className="text-red-600 dark:text-red-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-red-800 dark:text-red-200">Attention Required</h3>
-              <p className="text-sm text-red-700 dark:text-red-300">
-                {criticalCount} critical issue{criticalCount !== 1 ? 's' : ''} {warningCount > 0 ? `and ${warningCount} warning${warningCount !== 1 ? 's' : ''}` : ''} detected
-              </p>
-            </div>
-          </div>
-          
-          <div className="ml-10 flex flex-wrap gap-2">
-            {downServers.map((s, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                {s.name} ({s.host}:{s.port})
-              </span>
-            ))}
-            {downServices.map((s, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 ring-1 ring-red-200 dark:ring-red-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                {s.name}
-              </span>
-            ))}
-            {containers.filter(c => c.state !== 'running' && c.state !== 'exited').map((c, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                {c.name || c.id.slice(0, 12)} ({c.state})
-              </span>
-            ))}
-            {systemStats && systemStats.memory_used_percent > 90 && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                Memory {systemStats.memory_used_percent}%
-              </span>
-            )}
-            {systemStats && systemStats.disk_used_percent > 90 && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                Disk {systemStats.disk_used_percent}%
-              </span>
-            )}
-            {systemStats && systemStats.cpu_usage_percent > 90 && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 ring-1 ring-amber-200 dark:ring-amber-800/50">
-                <AlertCircleIcon className="w-3 h-3" />
-                CPU {systemStats.cpu_usage_percent}%
-              </span>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2 shrink-0">
-          <button onClick={onAddService} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
-            + Add Service
-          </button>
-          <button onClick={onRefresh} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-colors hover:border-gray-300 dark:hover:border-gray-700">
-            Refresh
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ServersSection({ servers, openServer }) {
-  return (
-    <section id="servers-section" className="mb-8">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
-      </div>
-    </section>
-  )
-}
-
-function ServicesSection({ services, openService, handleDeleteService, setShowAddService }) {
-  return (
-    <section id="services-section" className="mb-8">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
-        <button onClick={() => setShowAddService(true)}
-          className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
-          + Add Service
-        </button>
-      </div>
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              <th className="py-3 pl-4 pr-2 w-1/2">Service</th>
-              <th className="py-3 px-2">Status</th>
-              <th className="py-3 px-2">Code</th>
-              <th className="py-3 px-2">Latency</th>
-              <th className="py-3 pr-4 pl-2 w-10"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {services.map((s, i) => (
-              <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                <td className="py-0 pl-4 pr-2">
-                  <button onClick={() => openService(s)} className="group flex items-center w-full py-3 text-left">
-                    <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${s.status === 'up' ? 'bg-emerald-500 dark:bg-emerald-400' : s.status === 'down' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-500 dark:bg-amber-400'}`}
-                      style={{ boxShadow: s.status === 'up' ? '0 0 6px rgba(52,211,153,0.6)' : s.status === 'down' ? '0 0 6px rgba(248,113,113,0.6)' : '0 0 6px rgba(251,191,36,0.6)' }}
-                    />
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{s.name}</p>
-                      <p className="text-xs text-gray-500 truncate">{s.url}</p>
-                    </div>
-                  </button>
-                </td>
-                <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
-                <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
-                <td className="py-3 px-2 text-sm text-gray-500">{s.latency}</td>
-                <td className="py-3 pr-4 pl-2">
-                  <button onClick={(e) => { e.stopPropagation(); handleDeleteService(s.name) }}
-                    className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                    title="Delete service">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-function ContainersSection({ containers, openContainer }) {
-  return (
-    <section id="containers-section" className="mb-8">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              <th className="py-3 pl-4 pr-2 w-1/2">Container</th>
-              <th className="py-3 px-2">State</th>
-              <th className="py-3 px-2">Status</th>
-              <th className="py-3 pl-2 pr-4">Ports</th>
-            </tr>
-          </thead>
-          <tbody>
-            {containers.map((c, i) => (
-              <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                <td className="py-0 pl-4 pr-2">
-                  <button onClick={() => openContainer(c)} className="group flex items-center w-full py-3 text-left">
-                    <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${c.state === 'running' ? 'bg-emerald-500 dark:bg-emerald-400' : c.state === 'paused' ? 'bg-amber-500 dark:bg-amber-400' : 'bg-gray-400 dark:bg-gray-500'}`} />
-                    <div className="min-w-0">
-                      <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{c.name || c.id}</p>
-                      <p className="text-xs text-gray-500 truncate">{c.image}</p>
-                    </div>
-                  </button>
-                </td>
-                <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
-                <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
-                <td className="py-3 pl-2 pr-4 text-xs text-gray-500">{c.ports || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
 export default function Dashboard() {
   const [servers, setServers] = useState([])
   const [services, setServices] = useState([])
@@ -748,14 +585,6 @@ export default function Dashboard() {
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
-  const [layout, setLayout] = useState(() => {
-    try {
-      const saved = localStorage.getItem('dashboard-layout')
-      return saved ? JSON.parse(saved) : DEFAULT_LAYOUT
-    } catch {
-      return DEFAULT_LAYOUT
-    }
-  })
   const latencyHistoryRef = useRef({})
   const historyStatsRef = useRef({})
 
@@ -790,14 +619,13 @@ export default function Dashboard() {
 
       const newHistory = { ...latencyHistoryRef.current }
       for (const item of [...srv, ...svc]) {
-        if (!item.latency) continue
         if (!newHistory[item.name]) newHistory[item.name] = []
         const val = parseInt(item.latency, 10)
         if (!isNaN(val)) {
           newHistory[item.name].push(val)
-          if (newHistory[item.name].length > 30) {
-            newHistory[item.name].shift()
-          }
+        }
+        if (newHistory[item.name].length > 30) {
+          newHistory[item.name].shift()
         }
       }
       latencyHistoryRef.current = newHistory
@@ -821,10 +649,6 @@ export default function Dashboard() {
   const openContainer = (c) => setPanel({ type: 'container', item: c })
   const openSystem = () => setPanel({ type: 'system', item: systemStats })
 
-  const scrollToSection = (id) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
-  }
-
   const handleDeleteService = async (name) => {
     try {
       await fetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
@@ -845,93 +669,9 @@ export default function Dashboard() {
   const servicesUp = services.filter(s => s.status === 'up').length
   const runningContainers = containers.filter(c => c.state === 'running').length
 
-  const [dragOverId, setDragOverId] = useState(null)
-  const [draggedId, setDraggedId] = useState(null)
-
-  const handleDragStart = (id) => setDraggedId(id)
-  const handleDragOver = (e, id) => { e.preventDefault(); setDragOverId(id) }
-  const handleDragLeave = () => setDragOverId(null)
-  const handleDrop = (e, targetId) => {
-    e.preventDefault()
-    setDragOverId(null)
-    if (draggedId && draggedId !== targetId) {
-      setLayout(prev => {
-        const next = [...prev]
-        const from = next.findIndex(s => s.id === draggedId)
-        const to = next.findIndex(s => s.id === targetId)
-        if (from >= 0 && to >= 0) {
-          const [moved] = next.splice(from, 1)
-          next.splice(to, 0, moved)
-        }
-        return next
-      })
-    }
-    setDraggedId(null)
+  const scrollToSection = (id) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
   }
-  const handleDragEnd = () => { setDraggedId(null); setDragOverId(null) }
-
-  const toggleSection = (id) => setLayout(prev => prev.map(s => s.id === id ? { ...s, visible: !s.visible } : s))
-
-  const saveLayout = useCallback((layout) => {
-    try { localStorage.setItem('dashboard-layout', JSON.stringify(layout)) } catch (_) {}
-  }, [])
-
-  useEffect(() => { saveLayout(layout) }, [layout, saveLayout])
-
-  const renderSection = useCallback((section, idx) => {
-    const isDragged = draggedId === section.id
-    const isOver = dragOverId === section.id
-    return (
-      <section
-        key={section.id}
-        id={`${section.id}-section`}
-        className={`mb-8 rounded-xl border transition-all duration-200 ${isDragged ? 'opacity-40 ring-2 ring-emerald-500' : isOver ? 'ring-2 ring-emerald-500 border-emerald-500' : 'border-gray-200 dark:border-gray-800'} ${section.visible ? '' : 'hidden'}`}
-        onDragOver={e => handleDragOver(e, section.id)}
-        onDragLeave={handleDragLeave}
-        onDrop={e => handleDrop(e, section.id)}
-      >
-        <div className="flex items-center justify-between px-5 py-3">
-          <div className="flex items-center gap-2">
-            <span className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" onMouseDown={() => handleDragStart(section.id)}>
-              <DragHandle />
-            </span>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">{section.label}</h2>
-          </div>
-          <button onClick={() => toggleSection(section.id)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-            <EyeIcon open={section.visible} />
-          </button>
-        </div>
-        <div className="px-5 pb-5">
-          {section.id === 'stats' && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
-              <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
-              <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
-              <StatCard
-                title="System"
-                value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
-                accent={systemAccent}
-                onClick={openSystem}
-                subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
-              />
-            </div>
-          )}
-          {section.id === 'servers' && (
-            <ServersSection servers={servers} openServer={openServer} />
-          )}
-          {section.id === 'services' && (
-            <ServicesSection services={services} openService={openService} handleDeleteService={handleDeleteService} setShowAddService={setShowAddService} />
-          )}
-          {section.id === 'containers' && (
-            <ContainersSection containers={containers} openContainer={openContainer} />
-          )}
-        </div>
-      </section>
-    )
-  }, [draggedId, dragOverId, servers, services, containers, systemStats, openServer, openService, openContainer, handleDeleteService, scrollToSection, openSystem])
-
-  const visibleLayout = useMemo(() => layout.filter(s => s.visible), [layout])
-  const emptyState = visibleLayout.length === 0
 
   if (loading) {
     return (
@@ -972,28 +712,117 @@ export default function Dashboard() {
         </div>
       )}
 
-      {emptyState ? (
-        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-12 text-center">
-          <p className="text-gray-500">All sections are hidden. Toggle a section's visibility using the eye icon.</p>
-          <p className="mt-1 text-sm text-gray-400">Drag the ≡ handle to reorder sections.</p>
-        </div>
-      ) : (
-        visibleLayout.map((section, idx) => renderSection(section, idx))
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
+        <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
+        <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
+        <StatCard
+          title="System"
+          value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
+          accent={systemAccent}
+          onClick={openSystem}
+          subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
+        />
+      </div>
+
+      {servers.length > 0 && (
+        <section id="servers-section" className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
+          </div>
+        </section>
       )}
 
-      <ConfigEditor onConfigChange={fetchAll} />
-      <DependencyMap />
-      <ContainerLogViewer />
+      {services.length > 0 && (
+        <section id="services-section" className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
+            <button onClick={() => setShowAddService(true)}
+              className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+              + Add Service
+            </button>
+          </div>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="py-3 pl-4 pr-2 w-1/2">Service</th>
+                  <th className="py-3 px-2">Status</th>
+                  <th className="py-3 px-2">Code</th>
+                  <th className="py-3 px-2">Latency</th>
+                  <th className="py-3 pr-4 pl-2 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {services.map((s, i) => (
+                  <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                    <td className="py-0 pl-4 pr-2">
+                      <button onClick={() => openService(s)} className="group flex items-center w-full py-3 text-left">
+                        <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${s.status === 'up' ? 'bg-emerald-500 dark:bg-emerald-400' : s.status === 'down' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-500 dark:bg-amber-400'}`}
+                          style={{ boxShadow: s.status === 'up' ? '0 0 6px rgba(52,211,153,0.6)' : s.status === 'down' ? '0 0 6px rgba(248,113,113,0.6)' : '0 0 6px rgba(251,191,36,0.6)' }}
+                        />
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{s.name}</p>
+                          <p className="text-xs text-gray-500 truncate">{s.url}</p>
+                        </div>
+                      </button>
+                    </td>
+                    <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
+                    <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
+                    <td className="py-3 px-2 text-sm text-gray-500">{s.latency}</td>
+                    <td className="py-3 pr-4 pl-2">
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteService(s.name) }}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                        title="Delete service">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
-      <AttentionBanner
-        downServers={servers.filter(s => !s.alive)}
-        downServices={services.filter(s => s.status !== 'up')}
-        runningContainers={runningContainers}
-        containers={containers}
-        systemStats={systemStats}
-        onRefresh={fetchAll}
-        onAddService={() => setShowAddService(true)}
-      />
+      {containers.length > 0 && (
+        <section id="containers-section" className="mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="py-3 pl-4 pr-2 w-1/2">Container</th>
+                  <th className="py-3 px-2">State</th>
+                  <th className="py-3 px-2">Status</th>
+                  <th className="py-3 pl-2 pr-4">Ports</th>
+                </tr>
+              </thead>
+              <tbody>
+                {containers.map((c, i) => (
+                  <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                    <td className="py-0 pl-4 pr-2">
+                      <button onClick={() => openContainer(c)} className="group flex items-center w-full py-3 text-left">
+                        <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${c.state === 'running' ? 'bg-emerald-500 dark:bg-emerald-400' : c.state === 'paused' ? 'bg-amber-500 dark:bg-amber-400' : 'bg-gray-400 dark:bg-gray-500'}`} />
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{c.name || c.id}</p>
+                          <p className="text-xs text-gray-500 truncate">{c.image}</p>
+                        </div>
+                      </button>
+                    </td>
+                    <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
+                    <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
+                    <td className="py-3 pl-2 pr-4 text-xs text-gray-500">{c.ports || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {servers.length === 0 && services.length === 0 && containers.length === 0 && (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-12 text-center">
@@ -1013,3 +842,5 @@ export default function Dashboard() {
     </div>
   )
 }
+// ssh-sign-v2
+// Dashboard.jsx — network speed fix (signed)
