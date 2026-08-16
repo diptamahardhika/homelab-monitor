@@ -11,8 +11,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/docker/docker/client"
 )
 
 type SystemStats struct {
@@ -49,7 +47,7 @@ func GetSystemStats(ctx context.Context) *SystemStats {
 		CPUCount: runtime.NumCPU(),
 	}
 
-	if cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation()); err == nil {
+	if cli, err := getSharedClient(); err == nil {
 		info, err := cli.Info(ctx)
 		if err == nil {
 			stats.Hostname = info.Name
@@ -62,7 +60,6 @@ func GetSystemStats(ctx context.Context) *SystemStats {
 				stats.MemoryTotalMB = uint64(info.MemTotal / 1024 / 1024)
 			}
 		}
-		cli.Close()
 	}
 
 	stats.CPUUsagePercent = getCPUUsage()

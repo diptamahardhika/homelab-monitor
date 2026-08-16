@@ -604,21 +604,20 @@ export default function Dashboard() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [srv, svc, dock, sys, hist] = await Promise.all([
-        fetch('/api/servers').then(r => r.json()),
-        fetch('/api/services').then(r => r.json()),
-        fetch('/api/docker').then(r => r.json()),
-        fetch('/api/system').then(r => r.json()),
+      const [overview, hist] = await Promise.all([
+        fetch('/api/overview').then(r => r.json()),
         fetch('/api/history').then(r => r.json()).catch(() => ({})),
       ])
-      setServers(Array.isArray(srv) ? srv : [])
-      setServices(Array.isArray(svc) ? svc : [])
-      setContainers(Array.isArray(dock) ? dock : [])
-      setSystemStats(sys)
+      const serversData = Array.isArray(overview.servers) ? overview.servers : []
+      const servicesData = Array.isArray(overview.services) ? overview.services : []
+      setServers(serversData)
+      setServices(servicesData)
+      setContainers(Array.isArray(overview.containers) ? overview.containers : [])
+      setSystemStats(overview.system)
       historyStatsRef.current = hist && typeof hist === 'object' ? hist : {}
 
       const newHistory = { ...latencyHistoryRef.current }
-      for (const item of [...srv, ...svc]) {
+      for (const item of [...serversData, ...servicesData]) {
         if (!newHistory[item.name]) newHistory[item.name] = []
         const val = parseInt(item.latency, 10)
         if (!isNaN(val)) {

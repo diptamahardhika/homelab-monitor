@@ -9,6 +9,23 @@ import (
 	"time"
 )
 
+var (
+	// sharedTransport is reused by every check so connections are pooled and
+	// keep-alive across the 10s monitoring cycles instead of being re-created.
+	sharedTransport = &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+	}
+	serverClient = &http.Client{Timeout: 5 * time.Second, Transport: sharedTransport}
+	serviceClient = &http.Client{Timeout: 10 * time.Second, Transport: sharedTransport}
+)
+
 type ServerStatus struct {
 	Name   string `json:"name"`
 	Host   string `json:"host"`
@@ -40,8 +57,7 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		if port == 0 || port == 80 || port == 443 {
 			url = fmt.Sprintf("http://%s", addr)
 		}
-		client := &http.Client{Timeout: 5 * time.Second}
-		resp, err := client.Get(url)
+		resp, err := serverClient.Get(url)
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -94,8 +110,7 @@ func CheckService(ctx context.Context, name, rawURL string, checkType string) Se
 
 	switch checkType {
 	case "http":
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Get(rawURL)
+		resp, err := serviceClient.Get(rawURL)
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"

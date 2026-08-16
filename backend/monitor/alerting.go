@@ -39,10 +39,12 @@ func NewAlertManager() *AlertManager {
 
 // Process records current state and sends alerts on transitions.
 // The first time a key is seen it is recorded silently (no alert on startup).
+// Webhooks are sent asynchronously so a slow receiver never blocks the
+// monitoring refresh loop.
 func (a *AlertManager) Process(items []AlertTarget) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
+	transitions := make([]AlertTarget, 0, 2)
+	recovered := make([]bool, 0, 2)
 	for _, it := range items {
 		wasUp, seen := a.prev[it.Key]
 		a.prev[it.Key] = it.Up
@@ -52,12 +54,14 @@ func (a *AlertManager) Process(items []AlertTarget) {
 		if it.Up == wasUp {
 			continue // no change
 		}
+		transitions = append(transitions, it)
+		recovered = append(recovered, it.Up)
+	}
+	a.mu.Unlock()
 
-		if !it.Up {
-			a.send(it, false)
-		} else {
-			a.send(it, true)
-		}
+	for i, it := range transitions {
+		it := it
+		go a.send(it, recovered[i])
 	}
 }
 
