@@ -133,6 +133,16 @@ function StatCard({ title, value, subtitle, accent, onClick }) {
   )
 }
 
+function EmptyState({ title, hint, action }) {
+  return (
+    <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center">
+      <p className="text-sm font-medium text-gray-500">{title}</p>
+      {hint && <p className="mt-1 text-xs text-gray-400">{hint}</p>}
+      {action}
+    </div>
+  )
+}
+
 function ServerCard({ server, onClick }) {
   return (
     <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-4 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full">
@@ -142,7 +152,7 @@ function ServerCard({ server, onClick }) {
           <p className="mt-0.5 text-sm text-gray-500 truncate">{server.host}{server.port ? `:${server.port}` : ''}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
-          <span className="text-xs text-gray-400">{server.latency}</span>
+          <span className="text-xs text-gray-400">{server.latency || '—'}</span>
           <Dot alive={server.alive} />
         </div>
       </div>
@@ -331,7 +341,7 @@ function ServerDetail({ item, latencyHistory, historyStats }) {
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-1">
         <DetailRow label="Host" value={`${item.host}${item.port ? `:${item.port}` : ''}`} mono />
         <DetailRow label="Type" value={item.type} />
-        <DetailRow label="Latency" value={item.latency} />
+        <DetailRow label="Latency" value={item.latency || '—'} />
         {item.error && <DetailRow label="Error" value={item.error} />}
       </div>
       {historyStats && <UptimeCard stats={historyStats} />}
@@ -349,6 +359,14 @@ function formatTime(iso) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
   return `${Math.floor(diff / 86400)}d ago`
+}
+
+function formatRelative(ts, now) {
+  const diff = Math.max(0, Math.floor((now - ts) / 1000))
+  if (diff < 5) return 'just now'
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  return `${Math.floor(diff / 3600)}h ago`
 }
 
 function formatBytes(n) {
@@ -390,7 +408,7 @@ function ServiceDetail({ item, latencyHistory, historyStats }) {
         <DetailRow label="URL" value={item.url} mono href={item.url} />
         <DetailRow label="Type" value={item.type} />
         <DetailRow label="Status Code" value={item.status_code} />
-        <DetailRow label="Latency" value={item.latency} />
+        <DetailRow label="Latency" value={item.latency || '—'} />
         <DetailRow label="Resolved IP" value={item.resolved_ip} mono />
         {formatBytes(item.response_size) && <DetailRow label="Response Size" value={formatBytes(item.response_size)} />}
         {formatTime(item.last_checked) && <DetailRow label="Last Checked" value={formatTime(item.last_checked)} />}
@@ -585,6 +603,9 @@ export default function Dashboard() {
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const [now, setNow] = useState(Date.now())
   const latencyHistoryRef = useRef({})
   const historyStatsRef = useRef({})
 
@@ -630,6 +651,7 @@ export default function Dashboard() {
       latencyHistoryRef.current = newHistory
 
       setError(null)
+      setLastUpdated(Date.now())
     } catch (e) {
       setError(e.message)
     } finally {
@@ -668,12 +690,18 @@ export default function Dashboard() {
     }
   }, [fetchAll])
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
   const openServer = (s) => setPanel({ type: 'server', item: s })
   const openService = (s) => setPanel({ type: 'service', item: s })
   const openContainer = (c) => setPanel({ type: 'container', item: c })
   const openSystem = () => setPanel({ type: 'system', item: systemStats })
 
-  const handleDeleteService = async (name) => {
+  const confirmDelete = async (name) => {
+    setConfirmingDelete(null)
     try {
       await fetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
       fetchAll()
@@ -717,6 +745,13 @@ export default function Dashboard() {
           <p className="mt-1 text-sm text-gray-500">Real-time status of your infrastructure</p>
         </div>
         <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-1.5 text-xs text-gray-400"
+            title={lastUpdated ? `Last updated at ${new Date(lastUpdated).toLocaleTimeString()}` : 'Waiting for first update'}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${lastUpdated && now - lastUpdated < 10000 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+            <span>{lastUpdated ? `Updated ${formatRelative(lastUpdated, now)}` : 'Waiting for first update'}</span>
+          </div>
           <button
             onClick={toggleTheme}
             className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-2 text-gray-500 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-700 dark:hover:text-white active:scale-95"
@@ -749,24 +784,29 @@ export default function Dashboard() {
         />
       </div>
 
-      {servers.length > 0 && (
-        <section id="servers-section" className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
+      <section id="servers-section" className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
+        {servers.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
           </div>
-        </section>
-      )}
+        ) : (
+          <EmptyState
+            title="No servers configured"
+            hint="Add servers to config.yaml, or edit them via the Configuration (gear) button in the toolbar."
+          />
+        )}
+      </section>
 
-      {services.length > 0 && (
-        <section id="services-section" className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
-            <button onClick={() => setShowAddService(true)}
-              className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
-              + Add Service
-            </button>
-          </div>
+      <section id="services-section" className="mb-8">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
+          <button onClick={() => setShowAddService(true)}
+            className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+            + Add Service
+          </button>
+        </div>
+        {services.length > 0 ? (
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
             <table className="w-full">
               <thead>
@@ -775,7 +815,7 @@ export default function Dashboard() {
                   <th className="py-3 px-2">Status</th>
                   <th className="py-3 px-2">Code</th>
                   <th className="py-3 px-2">Latency</th>
-                  <th className="py-3 pr-4 pl-2 w-10"></th>
+                  <th className="py-3 pr-4 pl-2 w-28"></th>
                 </tr>
               </thead>
               <tbody>
@@ -794,27 +834,55 @@ export default function Dashboard() {
                     </td>
                     <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
                     <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
-                    <td className="py-3 px-2 text-sm text-gray-500">{s.latency}</td>
-                    <td className="py-3 pr-4 pl-2">
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteService(s.name) }}
-                        className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                        title="Delete service">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                    <td className="py-3 px-2 text-sm text-gray-500">{s.latency || '—'}</td>
+                    <td className="py-3 pr-4 pl-2 w-28 whitespace-nowrap">
+                      {confirmingDelete === s.name ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button onClick={() => confirmDelete(s.name)}
+                            className="rounded bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-600 transition-colors"
+                            title="Confirm delete">
+                            Yes
+                          </button>
+                          <button onClick={() => setConfirmingDelete(null)}
+                            className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                            title="Cancel delete">
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center">
+                          <button onClick={() => setConfirmingDelete(s.name)}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                            title="Delete service">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </section>
-      )}
+        ) : (
+          <EmptyState
+            title="No services being monitored"
+            hint="Add your first service to start checking its health."
+            action={
+              <button onClick={() => setShowAddService(true)}
+                className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
+                + Add Service
+              </button>
+            }
+          />
+        )}
+      </section>
 
-      {containers.length > 0 && (
-        <section id="containers-section" className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
+      <section id="containers-section" className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
+        {containers.length > 0 ? (
           <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
             <table className="w-full">
               <thead>
@@ -845,15 +913,13 @@ export default function Dashboard() {
               </tbody>
             </table>
           </div>
-        </section>
-      )}
-
-      {servers.length === 0 && services.length === 0 && containers.length === 0 && (
-        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-12 text-center">
-          <p className="text-gray-500">No servers, services, or Docker containers found.</p>
-          <p className="mt-1 text-sm text-gray-400">Configure your <code className="rounded bg-gray-100 dark:bg-gray-900 px-1.5 py-0.5 text-xs text-gray-600 dark:text-gray-400">config.yaml</code> and mount the Docker socket.</p>
-        </div>
-      )}
+        ) : (
+          <EmptyState
+            title="No containers detected"
+            hint="Mount the Docker socket (/var/run/docker.sock) to monitor your containers."
+          />
+        )}
+      </section>
 
       {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={fetchAll} />}
       <DetailPanel
