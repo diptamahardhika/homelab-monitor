@@ -2,22 +2,31 @@ package config
 
 import (
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Server struct {
-	Name    string `yaml:"name"`
-	Host    string `yaml:"host"`
-	Port    int    `yaml:"port"`
-	Type    string `yaml:"type"`
-	Gateway string `yaml:"gateway"`
+	Name             string        `yaml:"name"`
+	Host             string        `yaml:"host"`
+	Port             int           `yaml:"port"`
+	Type             string        `yaml:"type"`
+	Gateway          string        `yaml:"gateway"`
+	Timeout          time.Duration `yaml:"timeout"`
+	ExpectedStatus   int           `yaml:"expected_status"`
+	FollowRedirects  bool          `yaml:"follow_redirects"`
+	InsecureSkipVerify bool        `yaml:"insecure_skip_verify"`
 }
 
 type Service struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
-	Type string `yaml:"type"`
+	Name               string        `yaml:"name"`
+	URL                string        `yaml:"url"`
+	Type               string        `yaml:"type"`
+	Timeout            time.Duration `yaml:"timeout"`
+	ExpectedStatus     int           `yaml:"expected_status"`
+	FollowRedirects    bool          `yaml:"follow_redirects"`
+	InsecureSkipVerify bool          `yaml:"insecure_skip_verify"`
 }
 
 type Config struct {
@@ -41,5 +50,28 @@ func Load(path string) (*Config, error) {
 		cfg.Port = 9876
 	}
 
+	// Set defaults for server checks
+	for i := range cfg.Servers {
+		if cfg.Servers[i].Timeout == 0 {
+			cfg.Servers[i].Timeout = 5 * time.Second
+		}
+	}
+
+	// Set defaults for service checks
+	for i := range cfg.Services {
+		if cfg.Services[i].Timeout == 0 {
+			cfg.Services[i].Timeout = 10 * time.Second
+		}
+	}
+
 	return &cfg, nil
+}
+
+// Save writes the config to disk as YAML
+func (c *Config) Save(path string) error {
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
