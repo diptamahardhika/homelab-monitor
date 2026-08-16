@@ -147,6 +147,20 @@ func (h *Handler) currentOverview(ctx context.Context) Overview {
 	return overview
 }
 
+// overviewNow returns the latest snapshot immediately (stale-while-revalidate):
+// if a snapshot already exists it is served right away and a refresh is kicked
+// off in the background. It only blocks on the very first request, when no data
+// has been collected yet.
+func (h *Handler) overviewNow(ctx context.Context) Overview {
+	if overview, ok := h.cache.Snapshot(); ok {
+		h.cache.RefreshAsync(ctx)
+		return overview
+	}
+	_ = h.cache.Refresh(ctx)
+	overview, _ := h.cache.Snapshot()
+	return overview
+}
+
 func (h *Handler) loadExtraServices() {
 	data, err := os.ReadFile(h.dataPath)
 	if err != nil {
@@ -168,7 +182,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
-	overview := h.currentOverview(r.Context())
+	overview := h.overviewNow(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(overview)
 }
@@ -304,7 +318,7 @@ func (h *Handler) DockerContainerDetail(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) System(w http.ResponseWriter, r *http.Request) {
-	overview := h.currentOverview(r.Context())
+	overview := h.overviewNow(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(overview.System)
 }

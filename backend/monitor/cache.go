@@ -17,6 +17,7 @@ type SnapshotCache[T any] struct {
 	hasValue  bool
 	updatedAt time.Time
 	refreshMu sync.Mutex
+	lifecycle context.Context
 }
 
 func NewSnapshotCache[T any](interval time.Duration, refresh func(context.Context) (T, error)) *SnapshotCache[T] {
@@ -41,10 +42,36 @@ func (c *SnapshotCache[T]) isFresh() bool {
 	return c.hasValue && time.Since(c.updatedAt) < c.interval
 }
 
+// Refresh runs the underlying refresh synchronously, but only if the snapshot
+// is missing or stale. Concurrent callers block until the refresh completes so
+// only one refresh is executed at a time.
 func (c *SnapshotCache[T]) Refresh(ctx context.Context) error {
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
+	return c.refreshLocked(ctx)
+}
 
+// RefreshAsync returns immediately with the current snapshot and kicks off a
+// background refresh only when the snapshot is missing or stale. If a refresh
+// is already in flight it is not duplicated. This gives stale-while-revalidate
+// semantics: callers never block on slow checks.
+func (c *SnapshotCache[T]) RefreshAsync(ctx context.Context) {
+	c.refreshMu.Lock()
+	if c.isFresh() {
+		c.refreshMu.Unlock()
+		return
+	}
+	bg := ctx
+	if c.lifecycle != nil {
+		bg = c.lifecycle
+	}
+	go func() {
+		defer c.refreshMu.Unlock()
+		_ = c.refreshLocked(bg)
+	}()
+}
+
+func (c *SnapshotCache[T]) refreshLocked(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
 	}
@@ -64,6 +91,7 @@ func (c *SnapshotCache[T]) Refresh(ctx context.Context) error {
 
 // Start refreshes the snapshot immediately, then on interval until ctx ends.
 func (c *SnapshotCache[T]) Start(ctx context.Context) {
+	c.lifecycle = ctx
 	go func() {
 		_ = c.Refresh(ctx)
 		ticker := time.NewTicker(c.interval)
