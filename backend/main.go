@@ -62,6 +62,7 @@ func main() {
 		r.Get("/dependencies", h.GetDependencies)
 		r.Post("/dependencies", h.AddDependency)
 		r.Delete("/dependencies", h.DeleteDependency)
+		r.Get("/history", h.History)
 	})
 
 	staticDir := os.Getenv("STATIC_DIR")

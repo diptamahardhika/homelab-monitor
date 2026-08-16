@@ -35,20 +35,29 @@ type Handler struct {
 	dataPath      string
 	cache         *monitor.SnapshotCache[Overview]
 	depsStore     *dependencies.Store
+	alerts        *monitor.AlertManager
+	history       *monitor.HistoryStore
 }
 
 func New(cfg *config.Config, dataPath string) *Handler {
 	h := &Handler{cfg: cfg, dataPath: dataPath}
 	h.loadExtraServices()
 	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
-	depsPath := dataPath[:len(dataPath)-len("extra_services.json")] + "dependencies.json"
+
+	dataDir := dataPath[:len(dataPath)-len("extra_services.json")]
+	depsPath := dataDir + "dependencies.json"
 	h.depsStore = dependencies.New(depsPath, func() { h.cache.Invalidate() })
+
+	h.alerts = monitor.NewAlertManager()
+	h.history = monitor.NewHistoryStore(dataDir+"uptime.json", 0) // 0 => default 300 samples
+
 	return h
 }
 
 // Start begins background monitoring. Requests only read the latest snapshot.
 func (h *Handler) Start(ctx context.Context) {
 	h.cache.Start(ctx)
+	h.history.Start(ctx)
 }
 
 func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
@@ -98,6 +107,33 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 		return Overview{}, err
 	}
 	overview.CheckedAt = time.Now().UTC().Format(time.RFC3339)
+
+	// Record uptime history and fire alerts on up/down transitions.
+	now := time.Now()
+	targets := make([]monitor.AlertTarget, 0, len(overview.Servers)+len(overview.Services))
+	for i := range overview.Servers {
+		s := &overview.Servers[i]
+		key := "server:" + s.Name
+		h.history.Record(key, s.Alive, now)
+		targets = append(targets, monitor.AlertTarget{
+			Key: key, Name: s.Name, Kind: "server", Up: s.Alive, Detail: s.Error,
+		})
+	}
+	for i := range overview.Services {
+		s := &overview.Services[i]
+		up := s.Status == "up"
+		key := "service:" + s.Name
+		h.history.Record(key, up, now)
+		detail := s.Error
+		if !up && detail == "" {
+			detail = s.Status
+		}
+		targets = append(targets, monitor.AlertTarget{
+			Key: key, Name: s.Name, Kind: "service", Up: up, Detail: detail,
+		})
+	}
+	h.alerts.Process(targets)
+
 	return overview, nil
 }
 
@@ -336,6 +372,11 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	h.cache.Invalidate()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+}
+
+func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.history.All())
 }
 
 func (h *Handler) GetDependencies(w http.ResponseWriter, r *http.Request) {
