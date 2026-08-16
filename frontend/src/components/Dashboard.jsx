@@ -438,7 +438,7 @@ function ContainerDetail({ item }) {
           <div className="flex justify-between text-sm">
             <span className="text-gray-500">Network</span>
             <span className="font-mono text-gray-900 dark:text-white">
-              ↓{d.stats.network_rx_mb} MB / ↑{d.stats.network_tx_mb} MB
+              {formatSpeed(d.stats.network_rx_speed)} / {formatSpeed(d.stats.network_tx_speed)}
             </span>
           </div>
         </div>
