@@ -1,5 +1,40 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 
+const DEFAULT_LAYOUT = [
+  { id: 'stats', label: 'Stat Cards', visible: true },
+  { id: 'servers', label: 'Servers', visible: true },
+  { id: 'services', label: 'Services', visible: true },
+  { id: 'containers', label: 'Containers', visible: true },
+]
+
+function DragHandle() {
+  return (
+    <svg className="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 cursor-grab active:cursor-grabbing" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <circle cx="9" cy="5" r="1" />
+      <circle cx="15" cy="5" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="9" cy="19" r="1" />
+      <circle cx="15" cy="19" r="1" />
+    </svg>
+  )
+}
+
+function EyeIcon({ open }) {
+  return (
+    <svg className="w-5 h-5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      {open ? (
+        <>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+        </>
+      ) : (
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+      )}
+    </svg>
+  )
+}
+
 function SunIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -558,6 +593,15 @@ export default function Dashboard() {
   const [panel, setPanel] = useState(null)
   const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
+  const [layout, setLayout] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dashboard-layout')
+      return saved ? JSON.parse(saved) : DEFAULT_LAYOUT
+    } catch {
+      return DEFAULT_LAYOUT
+    }
+  })
+  const [draggedId, setDraggedId] = useState(null)
   const latencyHistoryRef = useRef({})
   const statusHistoryRef = useRef({})
 
@@ -574,6 +618,44 @@ export default function Dashboard() {
     setDark(prefersDark)
     document.documentElement.classList.toggle('dark', prefersDark)
   }, [])
+
+  useEffect(() => {
+    localStorage.setItem('dashboard-layout', JSON.stringify(layout))
+  }, [layout])
+
+  const handleDragStart = (id) => {
+    setDraggedId(id)
+  }
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+  }
+
+  const handleDrop = (targetId) => {
+    if (!draggedId || draggedId === targetId) return
+    setLayout((prev) => {
+      const newLayout = [...prev]
+      const fromIndex = newLayout.findIndex((item) => item.id === draggedId)
+      const toIndex = newLayout.findIndex((item) => item.id === targetId)
+      if (fromIndex === -1 || toIndex === -1) return prev
+      const [removed] = newLayout.splice(fromIndex, 1)
+      newLayout.splice(toIndex, 0, removed)
+      return newLayout
+    })
+    setDraggedId(null)
+  }
+
+  const handleDragEnd = () => {
+    setDraggedId(null)
+  }
+
+  const toggleSection = (id) => {
+    setLayout((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, visible: !item.visible } : item
+      )
+    )
+  }
 
   const fetchAll = useCallback(async () => {
     try {
@@ -690,117 +772,168 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
-        <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
-        <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
-        <StatCard
-          title="System"
-          value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
-          accent={systemAccent}
-          onClick={openSystem}
-          subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
-        />
-      </div>
-
-      {servers.length > 0 && (
-        <section id="servers-section" className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Servers</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
-          </div>
-        </section>
-      )}
-
-      {services.length > 0 && (
-        <section id="services-section" className="mb-8">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
-            <button onClick={() => setShowAddService(true)}
-              className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
-              + Add Service
-            </button>
-          </div>
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-1/2">Service</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 px-2">Code</th>
-                  <th className="py-3 px-2">Latency</th>
-                  <th className="py-3 pr-4 pl-2 w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {services.map((s, i) => (
-                  <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                    <td className="py-0 pl-4 pr-2">
-                      <button onClick={() => openService(s)} className="group flex items-center w-full py-3 text-left">
-                        <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${s.status === 'up' ? 'bg-emerald-500 dark:bg-emerald-400' : s.status === 'down' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-500 dark:bg-amber-400'}`}
-                          style={{ boxShadow: s.status === 'up' ? '0 0 6px rgba(52,211,153,0.6)' : s.status === 'down' ? '0 0 6px rgba(248,113,113,0.6)' : '0 0 6px rgba(251,191,36,0.6)' }}
+      {layout
+        .filter((section) => section.visible)
+        .map((section) => {
+          const Section = () => {
+            switch (section.id) {
+              case 'stats':
+                return (
+                  <div key="stats" className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
+                    <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
+                    <StatCard title="Containers" value={`${runningContainers}/${containers.length}`} accent="text-purple-600 dark:text-purple-400" onClick={() => scrollToSection('containers-section')} subtitle={containers.length === 0 ? 'no docker' : ''} />
+                    <StatCard
+                      title="System"
+                      value={systemStats ? `${systemStats.cpu_usage_percent}%` : '-'}
+                      accent={systemAccent}
+                      onClick={openSystem}
+                      subtitle={systemStats ? `${systemStats.memory_used_percent}% RAM · ${systemStats.disk_used_percent}% disk` : ''}
+                    />
+                  </div>
+                )
+              case 'servers':
+                return servers.length > 0 ? (
+                  <section key="servers" id="servers-section" className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Servers</h2>
+                      <div className="flex items-center gap-2">
+                        <DragHandle
+                          draggable
+                          onDragStart={() => handleDragStart('servers')}
+                          onDragOver={handleDragOver}
+                          onDrop={() => handleDrop('servers')}
+                          onDragEnd={handleDragEnd}
+                          title="Drag to reorder"
                         />
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{s.name}</p>
-                          <p className="text-xs text-gray-500 truncate">{s.url}</p>
-                        </div>
-                      </button>
-                    </td>
-                    <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
-                    <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
-                    <td className="py-3 px-2 text-sm text-gray-500">{s.latency}</td>
-                    <td className="py-3 pr-4 pl-2">
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteService(s.name) }}
-                        className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                        title="Delete service">
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {containers.length > 0 && (
-        <section id="containers-section" className="mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Docker Containers</h2>
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 pl-4 pr-2 w-1/2">Container</th>
-                  <th className="py-3 px-2">State</th>
-                  <th className="py-3 px-2">Status</th>
-                  <th className="py-3 pl-2 pr-4">Ports</th>
-                </tr>
-              </thead>
-              <tbody>
-                {containers.map((c, i) => (
-                  <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                    <td className="py-0 pl-4 pr-2">
-                      <button onClick={() => openContainer(c)} className="group flex items-center w-full py-3 text-left">
-                        <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${c.state === 'running' ? 'bg-emerald-500 dark:bg-emerald-400' : c.state === 'paused' ? 'bg-amber-500 dark:bg-amber-400' : 'bg-gray-400 dark:bg-gray-500'}`} />
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{c.name || c.id}</p>
-                          <p className="text-xs text-gray-500 truncate">{c.image}</p>
-                        </div>
-                      </button>
-                    </td>
-                    <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
-                    <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
-                    <td className="py-3 pl-2 pr-4 text-xs text-gray-500">{c.ports || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+                        <EyeIcon open={true} onClick={() => toggleSection('servers')} title="Hide section" />
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {servers.map((s, i) => <ServerCard key={i} server={s} onClick={() => openServer(s)} />)}
+                    </div>
+                  </section>
+                ) : null
+              case 'services':
+                return services.length > 0 ? (
+                  <section key="services" id="services-section" className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Services</h2>
+                      <div className="flex items-center gap-2">
+                        <DragHandle
+                          draggable
+                          onDragStart={() => handleDragStart('services')}
+                          onDragOver={handleDragOver}
+                          onDrop={() => handleDrop('services')}
+                          onDragEnd={handleDragEnd}
+                          title="Drag to reorder"
+                        />
+                        <EyeIcon open={true} onClick={() => toggleSection('services')} title="Hide section" />
+                        <button onClick={() => setShowAddService(true)}
+                          className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+                          + Add Service
+                        </button>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="py-3 pl-4 pr-2 w-1/2">Service</th>
+                            <th className="py-3 px-2">Status</th>
+                            <th className="py-3 px-2">Code</th>
+                            <th className="py-3 px-2">Latency</th>
+                            <th className="py-3 pr-4 pl-2 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {services.map((s, i) => (
+                            <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                              <td className="py-0 pl-4 pr-2">
+                                <button onClick={() => openService(s)} className="group flex items-center w-full py-3 text-left">
+                                  <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${s.status === 'up' ? 'bg-emerald-500 dark:bg-emerald-400' : s.status === 'down' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-500 dark:bg-amber-400'}`}
+                                    style={{ boxShadow: s.status === 'up' ? '0 0 6px rgba(52,211,153,0.6)' : s.status === 'down' ? '0 0 6px rgba(248,113,113,0.6)' : '0 0 6px rgba(251,191,36,0.6)' }}
+                                  />
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{s.name}</p>
+                                    <p className="text-xs text-gray-500 truncate">{s.url}</p>
+                                  </div>
+                                </button>
+                              </td>
+                              <td className="py-3 px-2"><StatusBadge status={s.status} /></td>
+                              <td className="py-3 px-2 text-sm text-gray-500">{s.status_code > 0 && s.status_code}</td>
+                              <td className="py-3 px-2 text-sm text-gray-500">{s.latency}</td>
+                              <td className="py-3 pr-4 pl-2">
+                                <button onClick={(e) => { e.stopPropagation(); handleDeleteService(s.name) }}
+                                  className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                                  title="Delete service">
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ) : null
+              case 'containers':
+                return containers.length > 0 ? (
+                  <section key="containers" id="containers-section" className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Docker Containers</h2>
+                      <div className="flex items-center gap-2">
+                        <DragHandle
+                          draggable
+                          onDragStart={() => handleDragStart('containers')}
+                          onDragOver={handleDragOver}
+                          onDrop={() => handleDrop('containers')}
+                          onDragEnd={handleDragEnd}
+                          title="Drag to reorder"
+                        />
+                        <EyeIcon open={true} onClick={() => toggleSection('containers')} title="Hide section" />
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th className="py-3 pl-4 pr-2 w-1/2">Container</th>
+                            <th className="py-3 px-2">State</th>
+                            <th className="py-3 px-2">Status</th>
+                            <th className="py-3 pl-2 pr-4">Ports</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {containers.map((c, i) => (
+                            <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                              <td className="py-0 pl-4 pr-2">
+                                <button onClick={() => openContainer(c)} className="group flex items-center w-full py-3 text-left">
+                                  <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${c.state === 'running' ? 'bg-emerald-500 dark:bg-emerald-400' : c.state === 'paused' ? 'bg-amber-500 dark:bg-amber-400' : 'bg-gray-400 dark:bg-gray-500'}`} />
+                                  <div className="min-w-0">
+                                    <p className="font-medium text-gray-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors truncate">{c.name || c.id}</p>
+                                    <p className="text-xs text-gray-500 truncate">{c.image}</p>
+                                  </div>
+                                </button>
+                              </td>
+                              <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
+                              <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
+                              <td className="py-3 pl-2 pr-4 text-xs text-gray-500">{c.ports || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ) : null
+              default:
+                return null
+            }
+          }
+          return <Section />
+        })}
 
       {servers.length === 0 && services.length === 0 && containers.length === 0 && (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-12 text-center">
