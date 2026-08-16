@@ -71,14 +71,19 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 		Services: make([]monitor.ServiceStatus, len(services)),
 	}
 	tasks := make([]func(context.Context) error, 0, len(h.cfg.Servers)+len(services)+2)
+
+	gatewayIP := ""
+	for _, server := range h.cfg.Servers {
+		if server.Gateway == "docker" {
+			gatewayIP = monitor.GetDockerGatewayIP(ctx)
+			break
+		}
+	}
+
 	for i, server := range h.cfg.Servers {
 		i, server := i, server
 		tasks = append(tasks, func(ctx context.Context) error {
-			dialHost := ""
-			if server.Gateway == "docker" {
-				dialHost = monitor.GetDockerGatewayIP(ctx)
-			}
-			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, dialHost)
+			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, gatewayIP)
 			return nil
 		})
 	}
@@ -173,12 +178,15 @@ func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	results := make([]monitor.ServerStatus, len(h.cfg.Servers))
-	for i, s := range h.cfg.Servers {
-		dialHost := ""
+	gatewayIP := ""
+	for _, s := range h.cfg.Servers {
 		if s.Gateway == "docker" {
-			dialHost = monitor.GetDockerGatewayIP(ctx)
+			gatewayIP = monitor.GetDockerGatewayIP(ctx)
+			break
 		}
-		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, dialHost)
+	}
+	for i, s := range h.cfg.Servers {
+		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, gatewayIP)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

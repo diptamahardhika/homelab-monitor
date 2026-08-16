@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -51,8 +52,20 @@ type DockerContainerDetail struct {
 	Stats   *ContainerStats   `json:"stats,omitempty"`
 }
 
-func getClient() (*client.Client, error) {
-	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+var (
+	sharedClientOnce sync.Once
+	sharedClientVal  *client.Client
+	sharedClientErr  error
+)
+
+// getSharedClient returns a single, lazily-created Docker client reused by all
+// calls. The client is safe for concurrent use, so the process opens only one
+// connection to the Docker socket instead of one per request/refresh.
+func getSharedClient() (*client.Client, error) {
+	sharedClientOnce.Do(func() {
+		sharedClientVal, sharedClientErr = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	})
+	return sharedClientVal, sharedClientErr
 }
 
 func GetDockerGatewayIP(ctx context.Context) string {
@@ -60,11 +73,10 @@ func GetDockerGatewayIP(ctx context.Context) string {
 		return ""
 	}
 
-	cli, err := getClient()
+	cli, err := getSharedClient()
 	if err != nil {
 		return ""
 	}
-	defer cli.Close()
 
 	net, err := cli.NetworkInspect(ctx, "bridge", network.InspectOptions{})
 	if err != nil {
@@ -82,7 +94,7 @@ func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 		return []DockerContainer{}, nil
 	}
 
-	cli, err := getClient()
+	cli, err := getSharedClient()
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +147,7 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 		return nil, nil
 	}
 
-	cli, err := getClient()
+	cli, err := getSharedClient()
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +249,7 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 }
 
 func GetContainerStats(ctx context.Context, containerID string) *ContainerStats {
-	cli, err := getClient()
+	cli, err := getSharedClient()
 	if err != nil {
 		return nil
 	}
