@@ -3,7 +3,6 @@ package monitor
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -56,274 +55,267 @@ func getClient() (*client.Client, error) {
 	return client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 }
 
-func withClient(ctx context.Context, fn func(*client.Client) error) error {
+func GetDockerGatewayIP(ctx context.Context) string {
+	if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
+		return ""
+	}
+
 	cli, err := getClient()
 	if err != nil {
-		return err
+		return ""
 	}
 	defer cli.Close()
-	return fn(cli)
-}
 
-func GetDockerGatewayIP(ctx context.Context) string {
-	var result string
-	_ = withClient(ctx, func(cli *client.Client) error {
-		if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
-			return nil
-		}
+	net, err := cli.NetworkInspect(ctx, "bridge", network.InspectOptions{})
+	if err != nil {
+		return ""
+	}
 
-		net, err := cli.NetworkInspect(ctx, "bridge", network.InspectOptions{})
-		if err != nil {
-			return nil
-		}
-
-		if len(net.IPAM.Config) > 0 {
-			result = net.IPAM.Config[0].Gateway
-		}
-		return nil
-	})
-	return result
+	if len(net.IPAM.Config) > 0 {
+		return net.IPAM.Config[0].Gateway
+	}
+	return ""
 }
 
 func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
-	var result []DockerContainer
-	err := withClient(ctx, func(cli *client.Client) error {
-		if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
-			result = []DockerContainer{}
-			return nil
+	if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
+		return []DockerContainer{}, nil
+	}
+
+	cli, err := getClient()
+	if err != nil {
+		return nil, err
+	}
+
+	containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return []DockerContainer{}, nil
+	}
+
+	result := make([]DockerContainer, 0, len(containers))
+	for _, c := range containers {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
 		}
 
-		containers, err := cli.ContainerList(ctx, container.ListOptions{All: true})
-		if err != nil {
-			result = []DockerContainer{}
-			return nil
+		ports := ""
+		for i, p := range c.Ports {
+			if i > 0 {
+				ports += ", "
+			}
+			if p.PublicPort > 0 {
+				ports += itoa(int(p.PublicPort)) + ":" + itoa(int(p.PrivatePort)) + "/" + p.Type
+			} else {
+				ports += itoa(int(p.PrivatePort)) + "/" + p.Type
+			}
 		}
 
-		result = make([]DockerContainer, 0, len(containers))
-		for _, c := range containers {
-			name := ""
-			if len(c.Names) > 0 {
-				name = strings.TrimPrefix(c.Names[0], "/")
-			}
-
-			ports := ""
-			for i, p := range c.Ports {
-				if i > 0 {
-					ports += ", "
-				}
-				if p.PublicPort > 0 {
-					ports += itoa(int(p.PublicPort)) + ":" + itoa(int(p.PrivatePort)) + "/" + p.Type
-				} else {
-					ports += itoa(int(p.PrivatePort)) + "/" + p.Type
-				}
-			}
-
-			id := c.ID
-			if len(id) > 12 {
-				id = id[:12]
-			}
-
-			result = append(result, DockerContainer{
-				ID:      id,
-				Name:    name,
-				Image:   c.Image,
-				State:   c.State,
-				Status:  c.Status,
-				Ports:   ports,
-				Created: c.Created,
-			})
+		id := c.ID
+		if len(id) > 12 {
+			id = id[:12]
 		}
 
-		return nil
-	})
-	return result, err
+		result = append(result, DockerContainer{
+			ID:      id,
+			Name:    name,
+			Image:   c.Image,
+			State:   c.State,
+			Status:  c.Status,
+			Ports:   ports,
+			Created: c.Created,
+		})
+	}
+
+	return result, nil
 }
 
 func GetContainerDetail(ctx context.Context, containerID string) (*DockerContainerDetail, error) {
-	var result *DockerContainerDetail
-	err := withClient(ctx, func(cli *client.Client) error {
-		if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
-			return nil
-		}
+	if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
+		return nil, nil
+	}
 
-		detail, _, err := cli.ContainerInspectWithRaw(ctx, containerID, false)
-		if err != nil {
-			return err
-		}
+	cli, err := getClient()
+	if err != nil {
+		return nil, err
+	}
 
-		name := strings.TrimPrefix(detail.Name, "/")
+	detail, _, err := cli.ContainerInspectWithRaw(ctx, containerID, false)
+	if err != nil {
+		return nil, err
+	}
 
-		ports := ""
-		for port, bindings := range detail.NetworkSettings.Ports {
-			portStr := string(port)
-			for _, b := range bindings {
-				if ports != "" {
-					ports += ", "
-				}
-				if b.HostPort != "" {
-					ports += b.HostPort + ":" + portStr
-				} else {
-					ports += portStr
-				}
+	name := strings.TrimPrefix(detail.Name, "/")
+
+	ports := ""
+	for port, bindings := range detail.NetworkSettings.Ports {
+		portStr := string(port)
+		for _, b := range bindings {
+			if ports != "" {
+				ports += ", "
+			}
+			if b.HostPort != "" {
+				ports += b.HostPort + ":" + portStr
+			} else {
+				ports += portStr
 			}
 		}
+	}
 
-		env := make(map[string]string)
-		for _, e := range detail.Config.Env {
-			parts := strings.SplitN(e, "=", 2)
-			if len(parts) == 2 {
-				env[parts[0]] = parts[1]
-			}
+	env := make(map[string]string)
+	for _, e := range detail.Config.Env {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			env[parts[0]] = parts[1]
 		}
+	}
 
-		mounts := make([]string, 0, len(detail.Mounts))
-		for _, m := range detail.Mounts {
-			mounts = append(mounts, m.Source+" -> "+m.Destination)
-		}
+	mounts := make([]string, 0, len(detail.Mounts))
+	for _, m := range detail.Mounts {
+		mounts = append(mounts, m.Source+" -> "+m.Destination)
+	}
 
-		network := ""
-		ip := ""
-		for name, net := range detail.NetworkSettings.Networks {
-			network = name
-			ip = net.IPAddress
-		}
+	network := ""
+	ip := ""
+	for name, net := range detail.NetworkSettings.Networks {
+		network = name
+		ip = net.IPAddress
+	}
 
-		uptime := ""
-		if detail.State.Running {
-			started := detail.State.StartedAt
-			t, err := time.Parse(time.RFC3339Nano, started)
-			if err == nil {
-				d := time.Since(t)
-				h := int(d.Hours())
-				m := int(d.Minutes()) % 60
-				if h > 24 {
-					uptime = itoa(h/24) + "d " + itoa(h%24) + "h"
-				} else {
-					uptime = itoa(h) + "h " + itoa(m) + "m"
-				}
-			}
-		}
-
-		created := ""
-		t, err := time.Parse(time.RFC3339Nano, detail.Created)
+	uptime := ""
+	if detail.State.Running {
+		started := detail.State.StartedAt
+		t, err := time.Parse(time.RFC3339Nano, started)
 		if err == nil {
-			created = t.Format("Jan 2, 2006 15:04")
+			d := time.Since(t)
+			h := int(d.Hours())
+			m := int(d.Minutes()) % 60
+			if h > 24 {
+				uptime = itoa(h/24) + "d " + itoa(h%24) + "h"
+			} else {
+				uptime = itoa(h) + "h " + itoa(m) + "m"
+			}
 		}
+	}
 
-		result = &DockerContainerDetail{
-			ID:      detail.ID[:12],
-			Name:    name,
-			Image:   detail.Config.Image,
-			Created: created,
-			State:   detail.State.Status,
-			Status:  detail.State.Status,
-			Ports:   ports,
-			PID:     detail.State.Pid,
-			Env:     env,
-			Mounts:  mounts,
-			Network: network,
-			IP:      ip,
-			Command: strings.Join(detail.Config.Cmd, " "),
-			Uptime:  uptime,
-		}
+	created := ""
+	t, err := time.Parse(time.RFC3339Nano, detail.Created)
+	if err == nil {
+		created = t.Format("Jan 2, 2006 15:04")
+	}
 
-		if detail.State.Running {
-			result.Stats = GetContainerStats(ctx, containerID)
-		}
+	result := &DockerContainerDetail{
+		ID:      detail.ID[:12],
+		Name:    name,
+		Image:   detail.Config.Image,
+		Created: created,
+		State:   detail.State.Status,
+		Status:  detail.State.Status,
+		Ports:   ports,
+		PID:     detail.State.Pid,
+		Env:     env,
+		Mounts:  mounts,
+		Network: network,
+		IP:      ip,
+		Command: strings.Join(detail.Config.Cmd, " "),
+		Uptime:  uptime,
+	}
 
-		if detail.State.Running {
-			result.Status = "running"
-		} else if detail.State.ExitCode != 0 {
-			result.Status = "exited (" + itoa(detail.State.ExitCode) + ")"
-		} else {
-			result.Status = "exited"
-		}
+	if detail.State.Running {
+		result.Stats = GetContainerStats(ctx, containerID)
+	}
 
-		return nil
-	})
-	return result, err
+	if detail.State.Running {
+		result.Status = "running"
+	} else if detail.State.ExitCode != 0 {
+		result.Status = "exited (" + itoa(detail.State.ExitCode) + ")"
+	} else {
+		result.Status = "exited"
+	}
+
+	return result, nil
 }
 
 func GetContainerStats(ctx context.Context, containerID string) *ContainerStats {
-	var result *ContainerStats
-	_ = withClient(ctx, func(cli *client.Client) error {
-		resp, err := cli.ContainerStats(ctx, containerID, false)
-		if err != nil {
-			return nil
-		}
-		defer resp.Body.Close()
-
-		var raw struct {
-			CPUStats struct {
-				CPUUsage struct {
-					TotalUsage float64 `json:"total_usage"`
-				} `json:"cpu_usage"`
-				SystemCPUUsage float64 `json:"system_cpu_usage"`
-				OnlineCPUs     uint    `json:"online_cpus"`
-			} `json:"cpu_stats"`
-			PrecpuStats struct {
-				CPUUsage struct {
-					TotalUsage float64 `json:"total_usage"`
-				} `json:"cpu_usage"`
-				SystemCPUUsage float64 `json:"system_cpu_usage"`
-			} `json:"precpu_stats"`
-			MemoryStats struct {
-				Usage float64 `json:"usage"`
-				Limit float64 `json:"limit"`
-				Stats struct {
-					Cache float64 `json:"cache"`
-				} `json:"stats"`
-			} `json:"memory_stats"`
-			Networks map[string]struct {
-				RxBytes float64 `json:"rx_bytes"`
-				TxBytes float64 `json:"tx_bytes"`
-			} `json:"networks"`
-		}
-
-		data, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil
-		}
-
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return nil
-		}
-
-		cpuDelta := raw.CPUStats.CPUUsage.TotalUsage - raw.PrecpuStats.CPUUsage.TotalUsage
-		systemDelta := raw.CPUStats.SystemCPUUsage - raw.PrecpuStats.SystemCPUUsage
-		cpuPercent := 0.0
-		if systemDelta > 0 && raw.CPUStats.OnlineCPUs > 0 {
-			cpuPercent = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100
-		}
-
-		cache := raw.MemoryStats.Stats.Cache
-		memUsage := raw.MemoryStats.Usage
-		if cache > 0 && memUsage > cache {
-			memUsage = memUsage - cache
-		}
-		memLimit := raw.MemoryStats.Limit
-		memPercent := 0.0
-		if memLimit > 0 {
-			memPercent = (memUsage / memLimit) * 100
-		}
-
-		var rxBytes, txBytes float64
-		for _, net := range raw.Networks {
-			rxBytes += net.RxBytes
-			txBytes += net.TxBytes
-		}
-
-		result = &ContainerStats{
-			CPUPercent:    round2(cpuPercent),
-			MemoryUsageMB: round2(memUsage / 1024 / 1024),
-			MemoryLimitMB: round2(memLimit / 1024 / 1024),
-			MemoryPercent: round2(memPercent),
-			NetworkRxMB:   round2(rxBytes / 1024 / 1024),
-			NetworkTxMB:   round2(txBytes / 1024 / 1024),
-		}
+	cli, err := getClient()
+	if err != nil {
 		return nil
-	})
-	return result
+	}
+
+	resp, err := cli.ContainerStats(ctx, containerID, false)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	var raw struct {
+		CPUStats struct {
+			CPUUsage struct {
+				TotalUsage float64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage float64 `json:"system_cpu_usage"`
+			OnlineCPUs     uint    `json:"online_cpus"`
+		} `json:"cpu_stats"`
+		PrecpuStats struct {
+			CPUUsage struct {
+				TotalUsage float64 `json:"total_usage"`
+			} `json:"cpu_usage"`
+			SystemCPUUsage float64 `json:"system_cpu_usage"`
+		} `json:"precpu_stats"`
+		MemoryStats struct {
+			Usage float64 `json:"usage"`
+			Limit float64 `json:"limit"`
+			Stats struct {
+				Cache float64 `json:"cache"`
+			} `json:"stats"`
+		} `json:"memory_stats"`
+		Networks map[string]struct {
+			RxBytes float64 `json:"rx_bytes"`
+			TxBytes float64 `json:"tx_bytes"`
+		} `json:"networks"`
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+
+	cpuDelta := raw.CPUStats.CPUUsage.TotalUsage - raw.PrecpuStats.CPUUsage.TotalUsage
+	systemDelta := raw.CPUStats.SystemCPUUsage - raw.PrecpuStats.SystemCPUUsage
+	cpuPercent := 0.0
+	if systemDelta > 0 && raw.CPUStats.OnlineCPUs > 0 {
+		cpuPercent = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100
+	}
+
+	cache := raw.MemoryStats.Stats.Cache
+	memUsage := raw.MemoryStats.Usage
+	if cache > 0 && memUsage > cache {
+		memUsage = memUsage - cache
+	}
+	memLimit := raw.MemoryStats.Limit
+	memPercent := 0.0
+	if memLimit > 0 {
+		memPercent = (memUsage / memLimit) * 100
+	}
+
+	var rxBytes, txBytes float64
+	for _, net := range raw.Networks {
+		rxBytes += net.RxBytes
+		txBytes += net.TxBytes
+	}
+
+	return &ContainerStats{
+		CPUPercent:    round2(cpuPercent),
+		MemoryUsageMB: round2(memUsage / 1024 / 1024),
+		MemoryLimitMB: round2(memLimit / 1024 / 1024),
+		MemoryPercent: round2(memPercent),
+		NetworkRxMB:   round2(rxBytes / 1024 / 1024),
+		NetworkTxMB:   round2(txBytes / 1024 / 1024),
+	}
 }
 
 func round2(v float64) float64 {
@@ -342,36 +334,4 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(buf[i:])
-}
-
-func GetContainerLogs(ctx context.Context, containerID string, tailLines int) (string, error) {
-	var result string
-	err := withClient(ctx, func(cli *client.Client) error {
-		if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
-			return nil
-		}
-
-		options := container.LogsOptions{
-			ShowStdout: true,
-			ShowStderr: true,
-			Follow:     false,
-			Tail:       fmt.Sprintf("%d", tailLines),
-			Timestamps: true,
-		}
-
-		reader, err := cli.ContainerLogs(ctx, containerID, options)
-		if err != nil {
-			return err
-		}
-		defer reader.Close()
-
-		data, err := io.ReadAll(reader)
-		if err != nil {
-			return err
-		}
-
-		result = string(data)
-		return nil
-	})
-	return result, err
 }

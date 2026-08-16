@@ -1,4 +1,4 @@
-module github.com/diptamahardhika/homelab-monitor/backend
+module github.com/pradiptamahardika/homelab-monitor
 
 go 1.25.0
 
