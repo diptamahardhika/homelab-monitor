@@ -140,7 +140,7 @@ services:
 | `follow_redirects` | services | `false` | Follow HTTP redirects |
 | `insecure_skip_verify` | services | `false` | Skip TLS certificate verification |
 
-Servers and services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added servers/services are persisted separately in `DATA_PATH`.
+Servers and services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added servers/services are persisted in `DATA_PATH` (`extra_servers.json` / `extra_services.json`), and edits/deletes to config-defined items are persisted to `<DATA_PATH dir>/config.yaml`. Both survive container restarts and rebuilds.
 
 ## API Endpoints
 
@@ -177,7 +177,7 @@ Servers and services can also be added, edited, and deleted directly from the da
 }
 ```
 
-Services added via the UI are persisted to `DATA_PATH` (`extra_services.json`) and survive container restarts.
+Services added via the UI are persisted to `DATA_PATH` (`extra_services.json`) and survive container restarts. Edits/deletes of services defined in `config.yaml` are persisted to `<DATA_PATH dir>/config.yaml` and survive container rebuilds too.
 
 ### Server Management (POST /api/servers)
 
@@ -191,7 +191,7 @@ Services added via the UI are persisted to `DATA_PATH` (`extra_services.json`) a
 }
 ```
 
-Servers added via the UI are persisted to `DATA_PATH` (`extra_servers.json`) and survive container restarts.
+Servers added via the UI are persisted to `DATA_PATH` (`extra_servers.json`) and survive container restarts. Edits/deletes of servers defined in `config.yaml` are persisted to `<DATA_PATH dir>/config.yaml` and survive container rebuilds too.
 
 ### Dependency Management (POST /api/dependencies)
 
@@ -269,9 +269,9 @@ Every push to `master` builds a new `latest` image for `linux/amd64`. Tagged rel
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CONFIG_PATH` | `/app/config.yaml` | Path to the configuration file |
+| `CONFIG_PATH` | `/app/config.yaml` | Path to the seed configuration file |
 | `STATIC_DIR` | `/app/static` | Path to the frontend static files |
-| `DATA_PATH` | `/app/data/extra_services.json` | Path to persist UI-added services |
+| `DATA_PATH` | `/app/data/extra_services.json` | Path to persist UI-added services; a runtime `config.yaml` in the same directory holds UI edits to config-defined items |
 | `ALERT_WEBHOOK_URL` | (empty) | Webhook URL to receive up/down alerts (Discord/Slack compatible) |
 
 ## Dashboard
