@@ -12,7 +12,8 @@ WORKDIR /build
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/homelab-monitor .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X github.com/pradiptamahardika/homelab-monitor/handlers.Version=${VERSION}" -o /app/homelab-monitor .
 
 # ---- Runtime ----
 FROM alpine:3.19
