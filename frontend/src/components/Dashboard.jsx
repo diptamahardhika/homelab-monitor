@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import DependencyGraph from './DependencyGraph'
 
 function SunIcon() {
   return (
@@ -341,6 +342,28 @@ function SortHeader({ label, sortKey, sort, onSort, className }) {
         <SortIcon active={active} dir={sort.dir} />
       </button>
     </th>
+  )
+}
+
+function FilterChips({ options, value, onChange }) {
+  return (
+    <div className="flex items-center rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-0.5 gap-0.5" role="group" aria-label="Filter by status">
+      {options.map(o => (
+        <button
+          key={o.value}
+          onClick={() => onChange(o.value)}
+          aria-pressed={value === o.value}
+          className={`rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors ${
+            value === o.value
+              ? 'bg-emerald-600 text-white'
+              : 'text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
+          }`}
+        >
+          {o.label}
+          {o.count !== undefined && <span className={`ml-1 ${value === o.value ? 'text-emerald-100' : 'text-gray-400'}`}>{o.count}</span>}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -986,6 +1009,8 @@ export default function Dashboard() {
   const [now, setNow] = useState(Date.now())
   const [servicesSearch, setServicesSearch] = useState('')
   const [containersSearch, setContainersSearch] = useState('')
+  const [servicesFilter, setServicesFilter] = useState('all')
+  const [containersFilter, setContainersFilter] = useState('all')
   const [servicesSort, setServicesSort] = useState({ key: 'name', dir: 'asc' })
   const [containersSort, setContainersSort] = useState({ key: 'status', dir: 'asc' })
   const [toast, setToast] = useState(null)
@@ -1019,6 +1044,34 @@ export default function Dashboard() {
       .then(d => { if (d && d.version) setVersion(d.version) })
       .catch(() => {})
   }, [])
+
+  const statusIndicator = useCallback(() => {
+    const downServers = servers.filter(s => !s.alive).length
+    const downServices = services.filter(s => s.status === 'down').length
+    const degradedServices = services.filter(s => s.status === 'degraded').length
+    const incidents = downServers + downServices
+
+    let color = '#10b981'
+    let label = ''
+    if (incidents > 0) {
+      color = '#ef4444'
+      label = `${incidents} incident${incidents !== 1 ? 's' : ''}`
+    } else if (degradedServices > 0) {
+      color = '#f59e0b'
+      label = `${degradedServices} degraded`
+    }
+
+    document.title = label ? `${label} — HomeLab Monitor` : 'HomeLab Monitor'
+    const link = document.querySelector('link[rel="icon"][type="image/svg+xml"]')
+    if (link) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0f172a"/><circle cx="16" cy="16" r="9" fill="${color}"/></svg>`
+      link.href = `data:image/svg+xml,${encodeURIComponent(svg)}`
+    }
+  }, [servers, services])
+
+  useEffect(() => {
+    statusIndicator()
+  }, [statusIndicator])
 
   const fetchAll = useCallback(async () => {
     try {
@@ -1210,8 +1263,10 @@ export default function Dashboard() {
       : { key, dir: 'asc' })
   }
 
-  const visibleServices = filterAndSort(services, servicesSearch, servicesSort, s => s.name, statusRank, s => parseInt(s.latency, 10))
-  const visibleContainers = filterAndSort(containers, containersSearch, containersSort, c => c.name || c.id, containerRank, c => null, c => c.state, c => c.status, true)
+  const filteredServices = servicesFilter === 'all' ? services : services.filter(s => s.status === servicesFilter)
+  const filteredContainers = containersFilter === 'all' ? containers : containers.filter(c => c.state === containersFilter)
+  const visibleServices = filterAndSort(filteredServices, servicesSearch, servicesSort, s => s.name, statusRank, s => parseInt(s.latency, 10))
+  const visibleContainers = filterAndSort(filteredContainers, containersSearch, containersSort, c => c.name || c.id, containerRank, c => null, c => c.state, c => c.status, true)
 
   if (loading) {
     return (
@@ -1330,7 +1385,17 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Services <span className="text-sm font-normal text-gray-400">({services.length})</span>
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FilterChips
+              options={[
+                { value: 'all', label: 'All', count: services.length },
+                { value: 'up', label: 'Up', count: services.filter(s => s.status === 'up').length },
+                { value: 'down', label: 'Down', count: services.filter(s => s.status === 'down').length },
+                { value: 'degraded', label: 'Degraded', count: services.filter(s => s.status === 'degraded').length },
+              ]}
+              value={servicesFilter}
+              onChange={setServicesFilter}
+            />
             <input
               type="text"
               value={servicesSearch}
@@ -1435,7 +1500,17 @@ export default function Dashboard() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Docker Containers <span className="text-sm font-normal text-gray-400">({containers.length})</span>
           </h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <FilterChips
+              options={[
+                { value: 'all', label: 'All', count: containers.length },
+                { value: 'running', label: 'Running', count: containers.filter(c => c.state === 'running').length },
+                { value: 'exited', label: 'Exited', count: containers.filter(c => c.state === 'exited').length },
+                { value: 'paused', label: 'Paused', count: containers.filter(c => c.state === 'paused').length },
+              ]}
+              value={containersFilter}
+              onChange={setContainersFilter}
+            />
             <input
               type="text"
               value={containersSearch}
@@ -1487,6 +1562,17 @@ export default function Dashboard() {
           />
         )}
       </section>
+
+      <DependencyGraph
+        servers={servers}
+        services={services}
+        containers={containers}
+        dark={dark}
+        onOpenServer={openServer}
+        onOpenService={openService}
+        onOpenContainer={openContainer}
+        showToast={showToast}
+      />
 
       {showAddServer && <ServerModal onClose={() => setShowAddServer(false)} onAdded={() => { fetchAll(); showToast('Server added') }} onError={msg => showToast(msg, 'error')} />}
       {editingServer && <ServerModal initial={editingServer} onClose={() => setEditingServer(null)} onAdded={() => { fetchAll(); showToast('Server updated') }} onError={msg => showToast(msg, 'error')} />}
