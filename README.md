@@ -279,9 +279,10 @@ Every push to `master` builds a new `latest` image for `linux/amd64`. Tagged rel
 The dashboard gives you an at-a-glance view of your infrastructure:
 
 - **Stat cards** — servers up/total, services up/total, running containers/total, and system CPU% (click System to open its detail panel)
+- **Status banner** — "All systems operational" when everything is healthy, or a red banner listing active incidents; a neutral hint when nothing is configured yet
 - **Servers** — card per server with host:port, latency, trend arrow, and reachability dot; add, edit, and delete (with confirmation) right from the section
-- **Services** — sortable table with name, status badge, status code, and latency; search, add, edit, and delete (with confirmation) right from the section
-- **Docker Containers** — sortable table with name, state, status text, and ports; searchable
+- **Services** — sortable table with name, status badge, status code, latency, and uptime %; search, add, edit, and delete (with confirmation) right from the section
+- **Docker Containers** — sortable table with name, state, status text, and ports; searchable; container ports show clickable **http/https** links so you can jump straight to a service running in a container
 - **Detail panel** — click any item to open a slide-over with full details: uptime percentage, latency sparkline (min/avg/max), resolved IP, response size, container performance stats, mounts, and environment variables. Close with the ✕ button, clicking the backdrop, or pressing **Esc**.
 - **Header** — theme toggle (dark/light), manual refresh button with loading state, and a live "last updated" indicator
 - **Footer** — build version shown at the bottom (e.g. `v0.1.0`, injected at build time)
