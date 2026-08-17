@@ -1,0 +1,399 @@
+import { useState, useEffect, useMemo, useCallback } from 'react'
+
+const NODE_W = 150
+const NODE_H = 40
+const GAP_X = 100
+const GAP_Y = 28
+const PAD = 24
+
+function truncate(s, n) {
+  if (!s) return ''
+  return s.length > n ? s.slice(0, n - 1) + '…' : s
+}
+
+// Layered topological layout of a DAG. Backend prevents cycles at add-time,
+// but guards against a malformed file for safety.
+function layoutGraph(deps) {
+  const edges = []
+  const nodes = new Set()
+  const adj = new Map()
+  const indeg = new Map()
+
+  for (const d of deps) {
+    const from = d && d.from
+    const to = d && d.to
+    if (!from || !to || from === to) continue
+    edges.push({ from, to })
+    nodes.add(from)
+    nodes.add(to)
+    if (!adj.has(from)) adj.set(from, [])
+    adj.get(from).push(to)
+    indeg.set(to, (indeg.get(to) || 0) + 1)
+    if (!indeg.has(from)) indeg.set(from, 0)
+  }
+
+  const layer = new Map()
+  for (const n of nodes) layer.set(n, 0)
+
+  // Kahn's algorithm → longest-path layering
+  const queue = [...nodes].filter(n => (indeg.get(n) || 0) === 0).map(n => ({ n, d: 0 }))
+  const seen = new Set()
+  let guard = 0
+  while (queue.length && guard < 10000) {
+    guard++
+    const { n, d } = queue.shift()
+    if (seen.has(n)) continue
+    seen.add(n)
+    layer.set(n, Math.max(layer.get(n), d))
+    for (const child of adj.get(n) || []) {
+      layer.set(child, Math.max(layer.get(child), d + 1))
+      queue.push({ n: child, d: d + 1 })
+    }
+  }
+  // Any node never reached (cycle) sits at layer 0 rather than looping forever.
+  for (const n of nodes) if (!seen.has(n)) layer.set(n, 0)
+
+  const byLayer = new Map()
+  for (const n of nodes) {
+    const l = layer.get(n) || 0
+    if (!byLayer.has(l)) byLayer.set(l, [])
+    byLayer.get(l).push(n)
+  }
+
+  const layers = [...byLayer.keys()].sort((a, b) => a - b)
+  const pos = new Map()
+  const W = Math.max(PAD * 2, PAD * 2 + layers.length * (NODE_W + GAP_X) - GAP_X)
+  const maxColH = layers.reduce((m, l) => Math.max(m, byLayer.get(l).length * (NODE_H + GAP_Y) - GAP_Y), 0)
+  const H = PAD * 2 + maxColH
+
+  layers.forEach((l, li) => {
+    const arr = byLayer.get(l)
+    const colH = arr.length * (NODE_H + GAP_Y) - GAP_Y
+    let y = PAD + (H - 2 * PAD - colH) / 2
+    const x = PAD + li * (NODE_W + GAP_X)
+    for (const n of arr) {
+      pos.set(n, { x, y })
+      y += NODE_H + GAP_Y
+    }
+  })
+
+  return { edges, nodes: [...nodes], pos, W, H }
+}
+
+function nodeMeta(name, servers, services, containers) {
+  const svc = services.find(s => s.name === name)
+  if (svc) {
+    return { kind: 'service', color: svc.status === 'up' ? '#10b981' : svc.status === 'down' ? '#ef4444' : '#f59e0b', item: svc }
+  }
+  const srv = servers.find(s => s.name === name)
+  if (srv) {
+    return { kind: 'server', color: srv.alive ? '#10b981' : '#ef4444', item: srv }
+  }
+  const ctn = containers.find(c => c.name === name)
+  if (ctn) {
+    return { kind: 'container', color: ctn.state === 'running' ? '#10b981' : ctn.state === 'paused' ? '#f59e0b' : '#6b7280', item: ctn }
+  }
+  return { kind: 'unknown', color: '#6b7280', item: null }
+}
+
+export { layoutGraph, nodeMeta }
+
+function AddDependencyModal({ services, existing, onClose, onAdded, onError }) {
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState(null)
+
+  const names = services.map(s => s.name)
+  const existingKey = new Set(existing.map(d => `${d.from}\u0000${d.to}`))
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!from || !to) {
+      setError('Both services are required')
+      return
+    }
+    if (from === to) {
+      setError('A service cannot depend on itself')
+      return
+    }
+    if (existingKey.has(`${from}\u0000${to}`)) {
+      setError('That dependency already exists')
+      return
+    }
+    setAdding(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/dependencies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to }),
+      })
+      if (!res.ok) {
+        let msg = 'Failed to add dependency'
+        try {
+          const data = await res.json()
+          msg = data.error || msg
+        } catch (_) {}
+        throw new Error(msg)
+      }
+      onAdded()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+      if (onError) onError(err.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog">
+      <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Dependency</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Depends on</label>
+            <select value={from} onChange={e => setFrom(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+              <option value="">Select a service…</option>
+              {names.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Required by</label>
+            <select value={to} onChange={e => setTo(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+              <option value="">Select a service…</option>
+              {names.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="rounded-lg border border-gray-200 dark:border-gray-800 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={adding}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
+              {adding ? 'Saving...' : 'Add'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+export default function DependencyGraph({ servers, services, containers, dark, onOpenServer, onOpenService, onOpenContainer, showToast }) {
+  const [deps, setDeps] = useState(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [confirming, setConfirming] = useState(null)
+
+  const fetchDeps = useCallback(async () => {
+    try {
+      const res = await fetch('/api/dependencies')
+      const data = await res.json()
+      setDeps(Array.isArray(data) ? data : [])
+    } catch (_) {
+      setDeps([])
+    }
+  }, [])
+
+  useEffect(() => { fetchDeps() }, [fetchDeps])
+
+  const graph = useMemo(() => layoutGraph(deps || []), [deps])
+
+  const openNode = (name) => {
+    const meta = nodeMeta(name, servers, services, containers)
+    if (!meta.item) return
+    if (meta.kind === 'server') onOpenServer(meta.item)
+    else if (meta.kind === 'service') onOpenService(meta.item)
+    else if (meta.kind === 'container') onOpenContainer(meta.item)
+  }
+
+  const removeDependency = async (from, to) => {
+    setConfirming(null)
+    try {
+      const res = await fetch(`/api/dependencies?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        let msg = `Failed to delete (${res.status})`
+        try {
+          const data = await res.json()
+          msg = data.error || msg
+        } catch (_) {}
+        throw new Error(msg)
+      }
+      showToast(`Removed "${from} → ${to}"`)
+      fetchDeps()
+    } catch (e) {
+      showToast(e.message || 'Failed to delete', 'error')
+    }
+  }
+
+  if (deps === null) {
+    return (
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">Dependencies</h2>
+        <div className="h-40 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 animate-pulse" />
+      </section>
+    )
+  }
+
+  const fill = dark ? '#0f172a' : '#ffffff'
+  const textFill = dark ? '#f8fafc' : '#0f172a'
+  const subFill = dark ? '#94a3b8' : '#64748b'
+  const edgeStroke = dark ? '#334155' : '#cbd5e1'
+
+  return (
+    <section className="mb-8" id="dependencies-section">
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Dependencies <span className="text-sm font-normal text-gray-400">({graph.edges.length})</span>
+        </h2>
+        <button onClick={() => setShowAdd(true)}
+          disabled={services.length === 0}
+          title={services.length === 0 ? 'Add a service first' : 'Add dependency'}
+          className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:pointer-events-none">
+          + Add Dependency
+        </button>
+      </div>
+
+      {graph.nodes.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center">
+          <p className="text-sm font-medium text-gray-500">No dependencies defined</p>
+          <p className="mt-1 text-xs text-gray-400">Declare which service depends on another to visualize the graph.</p>
+          {services.length > 0 && (
+            <button onClick={() => setShowAdd(true)}
+              className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
+              + Add Dependency
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 overflow-x-auto">
+            <svg viewBox={`0 0 ${graph.W} ${graph.H}`} className="min-w-[480px]" role="img" aria-label="Service dependency graph">
+              {graph.edges.map((e, i) => {
+                const s = graph.pos.get(e.from)
+                const t = graph.pos.get(e.to)
+                if (!s || !t) return null
+                const sx = s.x + NODE_W
+                const sy = s.y + NODE_H / 2
+                const tx = t.x
+                const ty = t.y + NODE_H / 2
+                const mid = GAP_X / 2
+                return (
+                  <g key={`e${i}`}>
+                    <title>{`${e.from} → ${e.to}`}</title>
+                    <path
+                      d={`M ${sx} ${sy} C ${sx + mid} ${sy}, ${tx - mid} ${ty}, ${tx} ${ty}`}
+                      fill="none"
+                      stroke={edgeStroke}
+                      strokeWidth="1.5"
+                    />
+                  </g>
+                )
+              })}
+              {graph.nodes.map(name => {
+                const p = graph.pos.get(name)
+                if (!p) return null
+                const meta = nodeMeta(name, servers, services, containers)
+                const clickable = Boolean(meta.item)
+                const dash = meta.kind === 'unknown' ? '6 4' : undefined
+                return (
+                  <g
+                    key={name}
+                    transform={`translate(${p.x}, ${p.y})`}
+                    onClick={clickable ? () => openNode(name) : undefined}
+                    style={clickable ? { cursor: 'pointer' } : undefined}
+                  >
+                    <title>{clickable ? `${name} (${meta.kind}) — click for details` : `${name} (unknown)`}</title>
+                    <rect
+                      width={NODE_W}
+                      height={NODE_H}
+                      rx="8"
+                      fill={fill}
+                      stroke={meta.color}
+                      strokeWidth="1.5"
+                      strokeDasharray={dash}
+                    />
+                    <circle cx="14" cy="20" r="4" fill={meta.color} />
+                    <text x="26" y="22" fontSize="12" fontWeight="600" fill={textFill}>{truncate(name, 17)}</text>
+                    <text x="26" y="34" fontSize="9" fill={subFill}>{meta.kind}</text>
+                  </g>
+                )
+              })}
+            </svg>
+          </div>
+
+          {graph.edges.length > 0 && (
+            <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 overflow-x-auto">
+              <table className="w-full min-w-[420px]">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="py-3 pl-4 pr-2 w-1/2">Depends on</th>
+                    <th className="py-3 px-2 w-1/2">Required by</th>
+                    <th className="py-3 pr-4 pl-2 w-16"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {graph.edges.map((e, i) => (
+                    <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
+                      <td className="py-2 pl-4 pr-2">
+                        <button onClick={() => openNode(e.from)} className="text-sm font-medium text-gray-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                          {e.from}
+                        </button>
+                      </td>
+                      <td className="py-2 px-2">
+                        <button onClick={() => openNode(e.to)} className="text-sm font-medium text-gray-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
+                          {e.to}
+                        </button>
+                      </td>
+                      <td className="py-2 pr-4 pl-2 text-right">
+                        {confirming === `${e.from}\u0000${e.to}` ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => removeDependency(e.from, e.to)}
+                              className="rounded bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-600 transition-colors"
+                              title="Confirm delete">
+                              Yes
+                            </button>
+                            <button onClick={() => setConfirming(null)}
+                              className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                              title="Cancel delete">
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirming(`${e.from}\u0000${e.to}`)}
+                            className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                            title={`Remove ${e.from} → ${e.to}`}
+                            aria-label={`Remove ${e.from} to ${e.to}`}>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {showAdd && (
+        <AddDependencyModal
+          services={services}
+          existing={graph.edges}
+          onClose={() => setShowAdd(false)}
+          onAdded={() => { fetchDeps(); showToast('Dependency added') }}
+          onError={msg => showToast(msg, 'error')}
+        />
+      )}
+    </section>
+  )
+}
