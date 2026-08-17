@@ -98,19 +98,24 @@ function nodeMeta(name, servers, services, containers) {
 
 export { layoutGraph, nodeMeta }
 
-function AddDependencyModal({ services, existing, onClose, onAdded, onError }) {
+function AddDependencyModal({ servers, services, existing, onClose, onAdded, onError }) {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState(null)
 
-  const names = services.map(s => s.name)
+  const groups = [
+    { label: 'Services', names: services.map(s => s.name) },
+    { label: 'Servers', names: servers.map(s => s.name) },
+  ].filter(g => g.names.length > 0)
   const existingKey = new Set(existing.map(d => `${d.from}\u0000${d.to}`))
+
+  const placeholder = groups.length === 0 ? 'Nothing to connect' : 'Select a service or server…'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!from || !to) {
-      setError('Both services are required')
+      setError('Both entries are required')
       return
     }
     if (from === to) {
@@ -155,18 +160,26 @@ function AddDependencyModal({ services, existing, onClose, onAdded, onError }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Depends on</label>
-            <select value={from} onChange={e => setFrom(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-              <option value="">Select a service…</option>
-              {names.map(n => <option key={n} value={n}>{n}</option>)}
+            <select value={from} onChange={e => setFrom(e.target.value)} disabled={groups.length === 0}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50">
+              <option value="">{placeholder}</option>
+              {groups.map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.names.map(n => <option key={n} value={n}>{n}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Required by</label>
-            <select value={to} onChange={e => setTo(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-              <option value="">Select a service…</option>
-              {names.map(n => <option key={n} value={n}>{n}</option>)}
+            <select value={to} onChange={e => setTo(e.target.value)} disabled={groups.length === 0}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50">
+              <option value="">{placeholder}</option>
+              {groups.map(g => (
+                <optgroup key={g.label} label={g.label}>
+                  {g.names.map(n => <option key={n} value={n}>{n}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -253,8 +266,8 @@ export default function DependencyGraph({ servers, services, containers, dark, o
           Dependencies <span className="text-sm font-normal text-gray-400">({graph.edges.length})</span>
         </h2>
         <button onClick={() => setShowAdd(true)}
-          disabled={services.length === 0}
-          title={services.length === 0 ? 'Add a service first' : 'Add dependency'}
+          disabled={services.length === 0 && servers.length === 0}
+          title={services.length === 0 && servers.length === 0 ? 'Add a service or server first' : 'Add dependency'}
           className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white disabled:opacity-40 disabled:pointer-events-none">
           + Add Dependency
         </button>
@@ -263,8 +276,8 @@ export default function DependencyGraph({ servers, services, containers, dark, o
       {graph.nodes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-800 p-8 text-center">
           <p className="text-sm font-medium text-gray-500">No dependencies defined</p>
-          <p className="mt-1 text-xs text-gray-400">Declare which service depends on another to visualize the graph.</p>
-          {services.length > 0 && (
+          <p className="mt-1 text-xs text-gray-400">Declare which service or server depends on another to visualize the graph.</p>
+          {(services.length > 0 || servers.length > 0) && (
             <button onClick={() => setShowAdd(true)}
               className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
               + Add Dependency
@@ -387,6 +400,7 @@ export default function DependencyGraph({ servers, services, containers, dark, o
 
       {showAdd && (
         <AddDependencyModal
+          servers={servers}
           services={services}
           existing={graph.edges}
           onClose={() => setShowAdd(false)}
