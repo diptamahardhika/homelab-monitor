@@ -89,6 +89,17 @@ func GetDockerGatewayIP(ctx context.Context) string {
 	return ""
 }
 
+func appendPort(ports *string, seen map[string]struct{}, entry string) {
+	if _, ok := seen[entry]; ok {
+		return
+	}
+	seen[entry] = struct{}{}
+	if *ports != "" {
+		*ports += ", "
+	}
+	*ports += entry
+}
+
 func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 	if _, err := os.Stat("/var/run/docker.sock"); os.IsNotExist(err) {
 		return []DockerContainer{}, nil
@@ -112,14 +123,12 @@ func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 		}
 
 		ports := ""
-		for i, p := range c.Ports {
-			if i > 0 {
-				ports += ", "
-			}
+		seen := make(map[string]struct{})
+		for _, p := range c.Ports {
 			if p.PublicPort > 0 {
-				ports += itoa(int(p.PublicPort)) + ":" + itoa(int(p.PrivatePort)) + "/" + p.Type
+				appendPort(&ports, seen, itoa(int(p.PublicPort))+":"+itoa(int(p.PrivatePort))+"/"+p.Type)
 			} else {
-				ports += itoa(int(p.PrivatePort)) + "/" + p.Type
+				appendPort(&ports, seen, itoa(int(p.PrivatePort))+"/"+p.Type)
 			}
 		}
 
@@ -160,16 +169,14 @@ func GetContainerDetail(ctx context.Context, containerID string) (*DockerContain
 	name := strings.TrimPrefix(detail.Name, "/")
 
 	ports := ""
+	seen := make(map[string]struct{})
 	for port, bindings := range detail.NetworkSettings.Ports {
 		portStr := string(port)
 		for _, b := range bindings {
-			if ports != "" {
-				ports += ", "
-			}
 			if b.HostPort != "" {
-				ports += b.HostPort + ":" + portStr
+				appendPort(&ports, seen, b.HostPort+":"+portStr)
 			} else {
-				ports += portStr
+				appendPort(&ports, seen, portStr)
 			}
 		}
 	}
