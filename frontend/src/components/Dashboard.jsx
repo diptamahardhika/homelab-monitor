@@ -33,6 +33,64 @@ function StatusBadge({ status }) {
   )
 }
 
+function UptimeBadge({ stats }) {
+  if (!stats || stats.samples === 0) return <span className="text-xs text-gray-400">—</span>
+  const pct = stats.uptime_percent
+  const color = pct >= 99
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : pct >= 95
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-rose-600 dark:text-rose-400'
+  return (
+    <span className={`text-xs font-medium whitespace-nowrap ${color}`} title={`${stats.up_samples}/${stats.samples} up`}>
+      {pct.toFixed(1)}%
+    </span>
+  )
+}
+
+function StatusBanner({ servers, services, containers }) {
+  const serverDown = servers.filter(s => !s.alive)
+  const servicesDown = services.filter(s => s.status !== 'up')
+  const hasTargets = servers.length > 0 || services.length > 0
+  const running = containers.filter(c => c.state === 'running').length
+
+  if (!hasTargets) {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span>Nothing configured yet — add a server or service to start monitoring.</span>
+      </div>
+    )
+  }
+
+  const issues = [
+    ...serverDown.map(s => `server "${s.name}"`),
+    ...servicesDown.map(s => `service "${s.name}"`),
+  ]
+
+  if (issues.length === 0) {
+    return (
+      <div className="mb-6 flex items-center gap-3 rounded-lg border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50 dark:bg-emerald-950/30 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-400">
+        <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <span className="font-medium">All systems operational</span>
+        <span className="ml-auto hidden sm:inline text-xs opacity-70">
+          {servers.length} server{servers.length !== 1 ? 's' : ''} · {services.length} service{services.length !== 1 ? 's' : ''} · {running} container{running !== 1 ? 's' : ''} running
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-6 flex items-center gap-3 rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+      <span className="font-medium shrink-0">{issues.length} incident{issues.length !== 1 ? 's' : ''}</span>
+      <span className="truncate text-xs opacity-80">
+        {issues.slice(0, 3).join(', ')}{issues.length > 3 ? ` +${issues.length - 3} more` : ''}
+      </span>
+    </div>
+  )
+}
+
 function Dot({ alive }) {
   return (
     <span
@@ -159,6 +217,43 @@ function CopyButton({ text }) {
         </svg>
       )}
     </button>
+  )
+}
+
+function PortLinks({ ports }) {
+  if (!ports) return <span className="text-gray-400">-</span>
+  const host = window.location.hostname
+  const items = ports.split(',').map(p => p.trim()).filter(Boolean)
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((p, i) => {
+        const m = p.match(/^(\d+):(\d+)\/(tcp|udp)$/)
+        if (!m || m[3] !== 'tcp') {
+          return <span key={i} className="text-gray-500">{p}</span>
+        }
+        const hostPort = m[1]
+        return (
+          <span key={i} className="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 px-1.5 py-0.5 text-[11px] text-gray-500">
+            {hostPort}:
+            <a
+              href={`http://${host}:${hostPort}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Open http://${host}:${hostPort}`}
+              className="ml-0.5 font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+            >http</a>
+            <span className="mx-0.5 text-gray-300 dark:text-gray-600">/</span>
+            <a
+              href={`https://${host}:${hostPort}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Open https://${host}:${hostPort}`}
+              className="font-medium text-emerald-600 dark:text-emerald-400 hover:underline"
+            >https</a>
+          </span>
+        )
+      })}
+    </div>
   )
 }
 
@@ -1176,6 +1271,8 @@ export default function Dashboard() {
         </div>
       )}
 
+      <StatusBanner servers={servers} services={services} containers={containers} />
+
       <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Servers" value={`${upCount}/${servers.length}`} accent="text-emerald-600 dark:text-emerald-400" onClick={() => scrollToSection('servers-section')} subtitle={servers.length === 0 ? 'none configured' : ''} />
         <StatCard title="Services" value={`${servicesUp}/${services.length}`} accent="text-blue-600 dark:text-blue-400" onClick={() => scrollToSection('services-section')} subtitle={services.length === 0 ? 'none configured' : ''} />
@@ -1259,6 +1356,7 @@ export default function Dashboard() {
                   <SortHeader label="Status" sortKey="status" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} />
                   <th className="py-3 px-2">Code</th>
                   <SortHeader label="Latency" sortKey="latency" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} />
+                  <th className="py-3 px-2">Uptime</th>
                   <th className="py-3 pr-4 pl-2 w-28"></th>
                 </tr>
               </thead>
@@ -1284,6 +1382,7 @@ export default function Dashboard() {
                         <Trend history={latencyHistoryRef.current[s.name]} />
                       </span>
                     </td>
+                    <td className="py-3 px-2"><UptimeBadge stats={historyStatsRef.current[`service:${s.name}`]} /></td>
                     <td className="py-3 pr-4 pl-2 w-28 whitespace-nowrap">
                       {confirmingDelete === s.name ? (
                         <div className="flex items-center justify-center gap-1.5">
@@ -1374,7 +1473,7 @@ export default function Dashboard() {
                     </td>
                     <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
                     <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
-                    <td className="py-3 pl-2 pr-4 text-xs text-gray-500">{c.ports || '-'}</td>
+                    <td className="py-3 pl-2 pr-4 text-xs text-gray-500"><PortLinks ports={c.ports} /></td>
                   </tr>
                 ))}
               </tbody>
