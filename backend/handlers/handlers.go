@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -36,6 +37,7 @@ type Handler struct {
 	extraServices []config.Service
 	extraServers  []config.Server
 	dataPath      string
+	configPath    string
 	cache         *monitor.SnapshotCache[Overview]
 	depsStore     *dependencies.Store
 	alerts        *monitor.AlertManager
@@ -43,17 +45,26 @@ type Handler struct {
 }
 
 func New(cfg *config.Config, dataPath string) *Handler {
-	h := &Handler{cfg: cfg, dataPath: dataPath}
+	dataDir := filepath.Dir(dataPath)
+	configPath := filepath.Join(dataDir, "config.yaml")
+
+	// A config persisted by the UI overrides the seed config (the one baked into
+	// the image or mounted at CONFIG_PATH). Persisting into the data volume keeps
+	// edits/deletes across container rebuilds and restarts.
+	if persisted, err := config.Load(configPath); err == nil {
+		*cfg = *persisted
+	}
+
+	h := &Handler{cfg: cfg, dataPath: dataPath, configPath: configPath}
 	h.loadExtraServices()
 	h.loadExtraServers()
 	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
 
-	dataDir := dataPath[:len(dataPath)-len("extra_services.json")]
-	depsPath := dataDir + "dependencies.json"
+	depsPath := filepath.Join(dataDir, "dependencies.json")
 	h.depsStore = dependencies.New(depsPath, func() { h.cache.Invalidate() })
 
 	h.alerts = monitor.NewAlertManager()
-	h.history = monitor.NewHistoryStore(dataDir+"uptime.json", 0) // 0 => default 300 samples
+	h.history = monitor.NewHistoryStore(filepath.Join(dataDir, "uptime.json"), 0) // 0 => default 300 samples
 
 	return h
 }
@@ -186,7 +197,7 @@ func (h *Handler) saveExtraServices() error {
 }
 
 func (h *Handler) extraServersPath() string {
-	return h.dataPath[:len(h.dataPath)-len("extra_services.json")] + "extra_servers.json"
+	return filepath.Join(filepath.Dir(h.dataPath), "extra_servers.json")
 }
 
 func (h *Handler) loadExtraServers() {
@@ -352,11 +363,7 @@ func (h *Handler) UpdateService(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			h.cfg.Services[i] = svc
-			configPath := os.Getenv("CONFIG_PATH")
-			if configPath == "" {
-				configPath = "config.yaml"
-			}
-			if err := h.cfg.Save(configPath); err != nil {
+			if err := h.cfg.Save(h.configPath); err != nil {
 				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -380,6 +387,21 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 		if s.Name == name {
 			h.extraServices = append(h.extraServices[:i], h.extraServices[i+1:]...)
 			h.saveExtraServices()
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+			return
+		}
+	}
+
+	// delete from config.yaml services
+	for i, s := range h.cfg.Services {
+		if s.Name == name {
+			h.cfg.Services = append(h.cfg.Services[:i], h.cfg.Services[i+1:]...)
+			if err := h.cfg.Save(h.configPath); err != nil {
+				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 			h.cache.Invalidate()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -485,11 +507,7 @@ func (h *Handler) UpdateServer(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			h.cfg.Servers[i] = srv
-			configPath := os.Getenv("CONFIG_PATH")
-			if configPath == "" {
-				configPath = "config.yaml"
-			}
-			if err := h.cfg.Save(configPath); err != nil {
+			if err := h.cfg.Save(h.configPath); err != nil {
 				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -513,6 +531,21 @@ func (h *Handler) DeleteServer(w http.ResponseWriter, r *http.Request) {
 		if s.Name == name {
 			h.extraServers = append(h.extraServers[:i], h.extraServers[i+1:]...)
 			h.saveExtraServers()
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+			return
+		}
+	}
+
+	// delete from config.yaml servers
+	for i, s := range h.cfg.Servers {
+		if s.Name == name {
+			h.cfg.Servers = append(h.cfg.Servers[:i], h.cfg.Servers[i+1:]...)
+			if err := h.cfg.Save(h.configPath); err != nil {
+				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 			h.cache.Invalidate()
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -614,11 +647,7 @@ func (h *Handler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist to config.yaml
-	configPath := os.Getenv("CONFIG_PATH")
-	if configPath == "" {
-		configPath = "config.yaml"
-	}
-	if err := h.cfg.Save(configPath); err != nil {
+	if err := h.cfg.Save(h.configPath); err != nil {
 		jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
