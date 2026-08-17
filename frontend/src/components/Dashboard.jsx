@@ -147,6 +147,7 @@ function CopyButton({ text }) {
       onClick={copy}
       className={`p-1 rounded transition-colors ${copied ? 'text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
       title={copied ? 'Copied!' : 'Copy to clipboard'}
+      aria-label={copied ? 'Copied!' : 'Copy to clipboard'}
     >
       {copied ? (
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -248,12 +249,62 @@ function SortHeader({ label, sortKey, sort, onSort, className }) {
   )
 }
 
-function ServerCard({ server, onClick, latencyHistory }) {
+function ServerCard({ server, onClick, latencyHistory, onEdit, onDelete, onConfirmDelete, confirmingDelete }) {
+  const actions = onEdit || onDelete ? (
+    <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-1.5">
+      {confirmingDelete === server.name ? (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); onConfirmDelete(server.name) }}
+            className="rounded bg-red-500 px-2 py-1 text-xs font-medium text-white hover:bg-red-600 transition-colors"
+            aria-label={`Confirm delete ${server.name}`}
+          >
+            Delete
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(null) }}
+            className="rounded border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            aria-label="Cancel delete"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            onClick={(e) => { e.stopPropagation(); onEdit(server) }}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-500 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            aria-label={`Edit ${server.name}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            Edit
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(server.name) }}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+            aria-label={`Delete ${server.name}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete
+          </button>
+        </>
+      )}
+    </div>
+  ) : null
+
   return (
-    <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-4 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full">
+    <div
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
+      className="group cursor-pointer rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-4 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full"
+    >
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <h3 className="font-semibold text-gray-900 dark:text-white truncate">{server.name}</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">{server.name}</h3>
           <p className="mt-0.5 text-sm text-gray-500 truncate">{server.host}{server.port ? `:${server.port}` : ''}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -265,7 +316,8 @@ function ServerCard({ server, onClick, latencyHistory }) {
         </div>
       </div>
       {server.error && <p className="mt-2 text-xs text-red-500 dark:text-red-400 truncate">{server.error}</p>}
-    </button>
+      {actions}
+    </div>
   )
 }
 
@@ -724,6 +776,100 @@ function AddServiceModal({ initial, onClose, onAdded, onError }) {
   )
 }
 
+function ServerModal({ initial, onClose, onAdded, onError }) {
+  const isEdit = Boolean(initial)
+  const [name, setName] = useState(initial?.name || '')
+  const [host, setHost] = useState(initial?.host || '')
+  const [port, setPort] = useState(initial?.port ? String(initial.port) : '')
+  const [type, setType] = useState(initial?.type || 'tcp')
+  const [gateway, setGateway] = useState(initial?.gateway || '')
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState(null)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setAdding(true)
+    setError(null)
+    try {
+      const res = await fetch(isEdit ? `/api/servers/${encodeURIComponent(initial.name)}` : '/api/servers', {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, host, port: parseInt(port, 10) || 0, type, gateway }),
+      })
+      if (!res.ok) {
+        let errMsg = isEdit ? 'Failed to update server' : 'Failed to add server'
+        try {
+          const data = await res.json()
+          errMsg = data.error || errMsg
+        } catch (_) {
+          errMsg = `${isEdit ? 'Failed to update server' : 'Failed to add server'} (${res.status})`
+        }
+        throw new Error(errMsg)
+      }
+      onAdded()
+      onClose()
+    } catch (err) {
+      setError(err.message)
+      if (onError) onError(err.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog">
+      <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{isEdit ? 'Edit Server' : 'Add Server'}</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Name</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required placeholder="My Server"
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Host</label>
+            <input type="text" value={host} onChange={e => setHost(e.target.value)} required placeholder="192.168.1.100"
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Port</label>
+            <input type="number" min="1" max="65535" value={port} onChange={e => setPort(e.target.value)} required placeholder="22"
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Type</label>
+            <select value={type} onChange={e => setType(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+              <option value="tcp">TCP</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Gateway
+              <span className="ml-1 text-xs font-normal text-gray-400">(optional — "docker" uses the bridge gateway)</span>
+            </label>
+            <input type="text" value={gateway} onChange={e => setGateway(e.target.value)} placeholder=""
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose}
+              className="rounded-lg border border-gray-200 dark:border-gray-800 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={adding}
+              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
+              {adding ? 'Saving...' : isEdit ? 'Save' : 'Add'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [servers, setServers] = useState([])
   const [services, setServices] = useState([])
@@ -736,6 +882,11 @@ export default function Dashboard() {
   const [showAddService, setShowAddService] = useState(false)
   const [editingService, setEditingService] = useState(null)
   const [confirmingDelete, setConfirmingDelete] = useState(null)
+  const [showAddServer, setShowAddServer] = useState(false)
+  const [editingServer, setEditingServer] = useState(null)
+  const [confirmingServerDelete, setConfirmingServerDelete] = useState(null)
+  const [version, setVersion] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [now, setNow] = useState(Date.now())
   const [servicesSearch, setServicesSearch] = useState('')
@@ -765,6 +916,13 @@ export default function Dashboard() {
     const prefersDark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
     setDark(prefersDark)
     document.documentElement.classList.toggle('dark', prefersDark)
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(d => { if (d && d.version) setVersion(d.version) })
+      .catch(() => {})
   }, [])
 
   const fetchAll = useCallback(async () => {
@@ -863,6 +1021,30 @@ export default function Dashboard() {
     }
   }
 
+  const confirmServerDelete = async (name) => {
+    setConfirmingServerDelete(null)
+    try {
+      const res = await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        let msg = `Failed to delete (${res.status})`
+        try {
+          const data = await res.json()
+          msg = data.error || msg
+        } catch (_) {}
+        throw new Error(msg)
+      }
+      showToast(`Deleted "${name}"`)
+      fetchAll()
+    } catch (e) {
+      showToast(e.message || 'Failed to delete', 'error')
+    }
+  }
+
+  const openEditServer = (s) => {
+    setConfirmingServerDelete(null)
+    setEditingServer({ name: s.name, host: s.host, port: s.port, type: s.type, gateway: s.gateway || '' })
+  }
+
   const openEditService = () => {
     const s = panel?.item
     if (!s) return
@@ -880,6 +1062,15 @@ export default function Dashboard() {
   const upCount = servers.filter(s => s.alive).length
   const servicesUp = services.filter(s => s.status === 'up').length
   const runningContainers = containers.filter(c => c.state === 'running').length
+
+  const manualRefresh = async () => {
+    setRefreshing(true)
+    try {
+      await fetchAll()
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const scrollToSection = (id) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
@@ -958,10 +1149,22 @@ export default function Dashboard() {
             onClick={toggleTheme}
             className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-2 text-gray-500 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-700 dark:hover:text-white active:scale-95"
             title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <button onClick={fetchAll} className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-900/80 active:scale-95">
+          <button
+            onClick={manualRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-900/80 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+            aria-label="Refresh data"
+          >
+            {refreshing && (
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            )}
             Refresh
           </button>
         </div>
@@ -987,17 +1190,40 @@ export default function Dashboard() {
       </div>
 
       <section id="servers-section" className="mb-8">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-          Servers <span className="text-sm font-normal text-gray-400">({servers.length})</span>
-        </h2>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+            Servers <span className="text-sm font-normal text-gray-400">({servers.length})</span>
+          </h2>
+          <button onClick={() => setShowAddServer(true)}
+            className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
+            + Add Server
+          </button>
+        </div>
         {servers.length > 0 ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {servers.map((s, i) => <ServerCard key={i} server={s} latencyHistory={latencyHistoryRef.current[s.name]} onClick={() => openServer(s)} />)}
+            {servers.map((s, i) => (
+              <ServerCard
+                key={i}
+                server={s}
+                latencyHistory={latencyHistoryRef.current[s.name]}
+                onClick={() => openServer(s)}
+                onEdit={openEditServer}
+                onDelete={(name) => name ? setConfirmingServerDelete(name) : setConfirmingServerDelete(null)}
+                onConfirmDelete={confirmServerDelete}
+                confirmingDelete={confirmingServerDelete}
+              />
+            ))}
           </div>
         ) : (
           <EmptyState
             title="No servers configured"
-            hint="Add servers to config.yaml, or edit them via the Configuration (gear) button in the toolbar."
+            hint="Add a server to start monitoring its reachability."
+            action={
+              <button onClick={() => setShowAddServer(true)}
+                className="mt-3 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 transition-colors">
+                + Add Server
+              </button>
+            }
           />
         )}
       </section>
@@ -1025,8 +1251,8 @@ export default function Dashboard() {
           visibleServices.length === 0 ? (
             <EmptyState title="No services match your search" hint="Try a different search term." />
           ) : (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-            <table className="w-full">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-x-auto transition-colors">
+            <table className="w-full min-w-[640px]">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <SortHeader label="Service" sortKey="name" sort={servicesSort} onSort={k => toggleSort(setServicesSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
@@ -1076,7 +1302,8 @@ export default function Dashboard() {
                         <div className="flex items-center justify-center">
                           <button onClick={() => setConfirmingDelete(s.name)}
                             className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                            title="Delete service">
+                            title="Delete service"
+                            aria-label={`Delete ${s.name}`}>
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -1123,8 +1350,8 @@ export default function Dashboard() {
           visibleContainers.length === 0 ? (
             <EmptyState title="No containers match your search" hint="Try a different search term." />
           ) : (
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-hidden transition-colors">
-            <table className="w-full">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-x-auto transition-colors">
+            <table className="w-full min-w-[640px]">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <SortHeader label="Container" sortKey="name" sort={containersSort} onSort={k => toggleSort(setContainersSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
@@ -1162,6 +1389,8 @@ export default function Dashboard() {
         )}
       </section>
 
+      {showAddServer && <ServerModal onClose={() => setShowAddServer(false)} onAdded={() => { fetchAll(); showToast('Server added') }} onError={msg => showToast(msg, 'error')} />}
+      {editingServer && <ServerModal initial={editingServer} onClose={() => setEditingServer(null)} onAdded={() => { fetchAll(); showToast('Server updated') }} onError={msg => showToast(msg, 'error')} />}
       {showAddService && <AddServiceModal onClose={() => setShowAddService(false)} onAdded={() => { fetchAll(); showToast('Service added') }} onError={msg => showToast(msg, 'error')} />}
       {editingService && <AddServiceModal initial={editingService} onClose={() => setEditingService(null)} onAdded={() => { fetchAll(); showToast('Service updated') }} onError={msg => showToast(msg, 'error')} />}
       <DetailPanel
@@ -1190,8 +1419,11 @@ export default function Dashboard() {
           <span className="min-w-0">{toast.message}</span>
         </div>
       )}
+
+      <footer className="mt-10 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs text-gray-400">
+        <span>HomeLab Monitor</span>
+        {version && <span className="font-mono">v{version}</span>}
+      </footer>
     </div>
   )
 }
-// ssh-sign-v2
-// Dashboard.jsx — network speed fix (signed)

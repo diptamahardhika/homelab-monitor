@@ -19,6 +19,9 @@ const (
 	defaultCheckConcurrency = 6
 )
 
+// Version is injected at build time via -ldflags.
+var Version = "dev"
+
 type Overview struct {
 	Servers    []monitor.ServerStatus    `json:"servers"`
 	Services   []monitor.ServiceStatus   `json:"services"`
@@ -31,6 +34,7 @@ type Handler struct {
 	cfg           *config.Config
 	mu            sync.RWMutex
 	extraServices []config.Service
+	extraServers  []config.Server
 	dataPath      string
 	cache         *monitor.SnapshotCache[Overview]
 	depsStore     *dependencies.Store
@@ -41,6 +45,7 @@ type Handler struct {
 func New(cfg *config.Config, dataPath string) *Handler {
 	h := &Handler{cfg: cfg, dataPath: dataPath}
 	h.loadExtraServices()
+	h.loadExtraServers()
 	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
 
 	dataDir := dataPath[:len(dataPath)-len("extra_services.json")]
@@ -64,23 +69,26 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 	services := make([]config.Service, 0, len(h.cfg.Services)+len(h.extraServices))
 	services = append(services, h.cfg.Services...)
 	services = append(services, h.extraServices...)
+	servers := make([]config.Server, 0, len(h.cfg.Servers)+len(h.extraServers))
+	servers = append(servers, h.cfg.Servers...)
+	servers = append(servers, h.extraServers...)
 	h.mu.RUnlock()
 
 	overview := Overview{
-		Servers:  make([]monitor.ServerStatus, len(h.cfg.Servers)),
+		Servers:  make([]monitor.ServerStatus, len(servers)),
 		Services: make([]monitor.ServiceStatus, len(services)),
 	}
-	tasks := make([]func(context.Context) error, 0, len(h.cfg.Servers)+len(services)+2)
+	tasks := make([]func(context.Context) error, 0, len(servers)+len(services)+2)
 
 	gatewayIP := ""
-	for _, server := range h.cfg.Servers {
+	for _, server := range servers {
 		if server.Gateway == "docker" {
 			gatewayIP = monitor.GetDockerGatewayIP(ctx)
 			break
 		}
 	}
 
-	for i, server := range h.cfg.Servers {
+	for i, server := range servers {
 		i, server := i, server
 		tasks = append(tasks, func(ctx context.Context) error {
 			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, gatewayIP)
@@ -177,8 +185,33 @@ func (h *Handler) saveExtraServices() error {
 	return os.WriteFile(h.dataPath, data, 0644)
 }
 
+func (h *Handler) extraServersPath() string {
+	return h.dataPath[:len(h.dataPath)-len("extra_services.json")] + "extra_servers.json"
+}
+
+func (h *Handler) loadExtraServers() {
+	data, err := os.ReadFile(h.extraServersPath())
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &h.extraServers)
+}
+
+func (h *Handler) saveExtraServers() error {
+	data, err := json.MarshalIndent(h.extraServers, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(h.extraServersPath(), data, 0644)
+}
+
 func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (h *Handler) Version(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"version": Version})
 }
 
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {
@@ -191,15 +224,21 @@ func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	results := make([]monitor.ServerStatus, len(h.cfg.Servers))
+	h.mu.RLock()
+	allServers := make([]config.Server, 0, len(h.cfg.Servers)+len(h.extraServers))
+	allServers = append(allServers, h.cfg.Servers...)
+	allServers = append(allServers, h.extraServers...)
+	h.mu.RUnlock()
+
+	results := make([]monitor.ServerStatus, len(allServers))
 	gatewayIP := ""
-	for _, s := range h.cfg.Servers {
+	for _, s := range allServers {
 		if s.Gateway == "docker" {
 			gatewayIP = monitor.GetDockerGatewayIP(ctx)
 			break
 		}
 	}
-	for i, s := range h.cfg.Servers {
+	for i, s := range allServers {
 		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, gatewayIP)
 	}
 
@@ -349,6 +388,139 @@ func (h *Handler) DeleteService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonError(w, "service not found", http.StatusNotFound)
+}
+
+func (h *Handler) AddServer(w http.ResponseWriter, r *http.Request) {
+	var srv config.Server
+	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if srv.Name == "" || srv.Host == "" || srv.Port == 0 {
+		jsonError(w, "name, host, and port are required", http.StatusBadRequest)
+		return
+	}
+	if srv.Type == "" {
+		srv.Type = "tcp"
+	}
+	if srv.Type != "tcp" && srv.Type != "http" {
+		jsonError(w, "server type must be tcp or http", http.StatusBadRequest)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for _, s := range h.extraServers {
+		if s.Name == srv.Name {
+			jsonError(w, "server already exists", http.StatusConflict)
+			return
+		}
+	}
+
+	h.extraServers = append(h.extraServers, srv)
+	if err := h.saveExtraServers(); err != nil {
+		jsonError(w, "failed to persist server", http.StatusInternalServerError)
+		return
+	}
+	h.cache.Invalidate()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+}
+
+func (h *Handler) UpdateServer(w http.ResponseWriter, r *http.Request) {
+	oldName := chi.URLParam(r, "name")
+
+	var srv config.Server
+	if err := json.NewDecoder(r.Body).Decode(&srv); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if srv.Name == "" || srv.Host == "" || srv.Port == 0 {
+		jsonError(w, "name, host, and port are required", http.StatusBadRequest)
+		return
+	}
+	if srv.Type == "" {
+		srv.Type = "tcp"
+	}
+	if srv.Type != "tcp" && srv.Type != "http" {
+		jsonError(w, "server type must be tcp or http", http.StatusBadRequest)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// update in extraServers (UI-added servers)
+	for i, s := range h.extraServers {
+		if s.Name == oldName {
+			for j, other := range h.extraServers {
+				if j != i && other.Name == srv.Name {
+					jsonError(w, "server already exists", http.StatusConflict)
+					return
+				}
+			}
+			h.extraServers[i] = srv
+			if err := h.saveExtraServers(); err != nil {
+				jsonError(w, "failed to persist server", http.StatusInternalServerError)
+				return
+			}
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+			return
+		}
+	}
+
+	// update in config.yaml servers
+	for i, s := range h.cfg.Servers {
+		if s.Name == oldName {
+			for j, other := range h.cfg.Servers {
+				if j != i && other.Name == srv.Name {
+					jsonError(w, "server already exists", http.StatusConflict)
+					return
+				}
+			}
+			h.cfg.Servers[i] = srv
+			configPath := os.Getenv("CONFIG_PATH")
+			if configPath == "" {
+				configPath = "config.yaml"
+			}
+			if err := h.cfg.Save(configPath); err != nil {
+				jsonError(w, "failed to persist config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "updated"})
+			return
+		}
+	}
+
+	jsonError(w, "server not found", http.StatusNotFound)
+}
+
+func (h *Handler) DeleteServer(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for i, s := range h.extraServers {
+		if s.Name == name {
+			h.extraServers = append(h.extraServers[:i], h.extraServers[i+1:]...)
+			h.saveExtraServers()
+			h.cache.Invalidate()
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+			return
+		}
+	}
+
+	jsonError(w, "server not found", http.StatusNotFound)
 }
 
 func (h *Handler) DockerContainers(w http.ResponseWriter, r *http.Request) {

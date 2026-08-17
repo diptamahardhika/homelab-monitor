@@ -15,7 +15,7 @@ Built with a **Go** backend and a **React + Vite** frontend styled with **Tailwi
 - **Webhook alerting** — fires a webhook only when a server/service transitions up↔down (no spam on every poll); works with Discord/Slack webhooks
 - **Detail panel** — click any server, service, container, or the system stat card to open a slide-over with full details (close with ✕, backdrop click, or **Esc**)
 - **Search & sort** — filter services and containers by name, and sort columns by name, status, or latency
-- **Service management UI** — add, edit, and delete services directly from the dashboard (no SSH required) with in-row delete confirmation and toast feedback
+- **Service & server management UI** — add, edit, and delete services and servers directly from the dashboard (no SSH required) with in-row delete confirmation and toast feedback
 - **Copy-to-clipboard** — one-click copy for hostnames, URLs, IDs, and other values
 - **Live updates** — 5-second polling with a "last updated" indicator and pauses automatically when the tab is hidden
 - **Dark / light theme** — toggle with persisted preference (respects system preference by default)
@@ -140,15 +140,19 @@ services:
 | `follow_redirects` | services | `false` | Follow HTTP redirects |
 | `insecure_skip_verify` | services | `false` | Skip TLS certificate verification |
 
-Services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added services are persisted separately in `DATA_PATH`.
+Servers and services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added servers/services are persisted separately in `DATA_PATH`.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Backend health check |
+| GET | `/api/version` | Build version (set at build time via `-ldflags`) |
 | GET | `/api/overview` | Cached snapshot of all dashboard data (stale-while-revalidate) |
 | GET | `/api/servers` | List all configured servers |
+| POST | `/api/servers` | Add a server (JSON body) |
+| PUT | `/api/servers/{name}` | Update an existing server |
+| DELETE | `/api/servers/{name}` | Remove a server |
 | GET | `/api/services` | List monitored services |
 | POST | `/api/services` | Add a service (JSON body) |
 | PUT | `/api/services/{name}` | Update an existing service |
@@ -174,6 +178,20 @@ Services can also be added, edited, and deleted directly from the dashboard — 
 ```
 
 Services added via the UI are persisted to `DATA_PATH` (`extra_services.json`) and survive container restarts.
+
+### Server Management (POST /api/servers)
+
+```json
+{
+  "name": "My Server",
+  "host": "192.168.1.100",
+  "port": 22,
+  "type": "tcp",
+  "gateway": ""
+}
+```
+
+Servers added via the UI are persisted to `DATA_PATH` (`extra_servers.json`) and survive container restarts.
 
 ### Dependency Management (POST /api/dependencies)
 
@@ -261,11 +279,12 @@ Every push to `master` builds a new `latest` image for `linux/amd64`. Tagged rel
 The dashboard gives you an at-a-glance view of your infrastructure:
 
 - **Stat cards** — servers up/total, services up/total, running containers/total, and system CPU% (click System to open its detail panel)
-- **Servers** — card per server with host:port, latency, trend arrow, and reachability dot
+- **Servers** — card per server with host:port, latency, trend arrow, and reachability dot; add, edit, and delete (with confirmation) right from the section
 - **Services** — sortable table with name, status badge, status code, and latency; search, add, edit, and delete (with confirmation) right from the section
 - **Docker Containers** — sortable table with name, state, status text, and ports; searchable
 - **Detail panel** — click any item to open a slide-over with full details: uptime percentage, latency sparkline (min/avg/max), resolved IP, response size, container performance stats, mounts, and environment variables. Close with the ✕ button, clicking the backdrop, or pressing **Esc**.
-- **Header** — theme toggle (dark/light), manual refresh button, and a live "last updated" indicator
+- **Header** — theme toggle (dark/light), manual refresh button with loading state, and a live "last updated" indicator
+- **Footer** — build version shown at the bottom (e.g. `v0.1.0`, injected at build time)
 
 ## Alerting
 

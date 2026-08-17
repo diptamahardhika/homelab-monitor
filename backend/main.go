@@ -52,7 +52,11 @@ func main() {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.Health)
+		r.Get("/version", h.Version)
 		r.Get("/servers", h.Servers)
+		r.Post("/servers", h.AddServer)
+		r.Put("/servers/{name}", h.UpdateServer)
+		r.Delete("/servers/{name}", h.DeleteServer)
 		r.Get("/services", h.Services)
 		r.Post("/services", h.AddService)
 		r.Put("/services/{name}", h.UpdateService)
