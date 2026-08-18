@@ -63,25 +63,16 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+          flavor: |
+            suffix=-linux-${{ matrix.platform }},onlatest=true
 
       - uses: docker/setup-buildx-action@v4
-
-      - name: Compute arch-suffixed tags
-        id: tags
-        run: |
-          tags=""
-          while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            tags="$tags $tag-linux-${{ matrix.platform }}"
-          done <<< "${{ steps.meta.outputs.tags }}"
-          tags="${tags# }"
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
