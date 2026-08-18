@@ -478,7 +478,7 @@ function ServerCard({ server, onClick, latencyHistory, onEdit, onDelete, onConfi
   )
 }
 
-function DetailPanel({ item, type, onClose, onEdit, latencyHistory, historyStats }) {
+function DetailPanel({ item, type, onClose, onEdit, latencyHistory, historyStats, systemStats }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -533,7 +533,7 @@ function DetailPanel({ item, type, onClose, onEdit, latencyHistory, historyStats
             {type === 'server' && <ServerDetail item={item} latencyHistory={latencyHistory} historyStats={historyStats} />}
             {type === 'service' && <ServiceDetail item={item} latencyHistory={latencyHistory} historyStats={historyStats} />}
             {type === 'container' && <ContainerDetail item={item} />}
-            {type === 'system' && <SystemDetail stats={item} />}
+            {type === 'system' && <SystemDetail stats={systemStats} />}
           </div>
         )}
       </div>
@@ -1743,6 +1743,7 @@ const manualRefresh = async () => {
         onEdit={openEditService}
         latencyHistory={latencyHistoryRef.current[panel?.item?.name]}
         historyStats={historyStatsRef.current[`${panel?.type}:${panel?.item?.name}`]}
+        systemStats={systemStats}
       />
 
       {toast && (
