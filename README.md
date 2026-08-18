@@ -137,9 +137,9 @@ services:
 |-----------|------------|---------|-------------|
 | `timeout` | both | 5s (servers), 10s (services) | Maximum time to wait for check |
 | `gateway` | servers | "" | Set to `"docker"` to use Docker bridge gateway IP |
-| `expected_status` | services | 0 (any 2xx/3xx) | Specific HTTP status to expect |
-| `follow_redirects` | services | `false` | Follow HTTP redirects |
-| `insecure_skip_verify` | services | `false` | Skip TLS certificate verification |
+| `expected_status` | both (HTTP) | 0 (any 2xx/3xx) | Specific HTTP status to expect |
+| `follow_redirects` | both (HTTP) | `false` | Follow HTTP redirects |
+| `insecure_skip_verify` | both (HTTP) | `false` | Skip TLS certificate verification |
 
 Servers and services can also be added, edited, and deleted directly from the dashboard — no config file editing required. UI-added servers/services are persisted in `DATA_PATH` (`extra_servers.json` / `extra_services.json`), and edits/deletes to config-defined items are persisted to `<DATA_PATH dir>/config.yaml`. Both survive container restarts and rebuilds.
 
@@ -266,7 +266,7 @@ ghcr.io/diptamahardhika/homelab-monitor:latest
 ghcr.io/diptamahardhika/homelab-monitor:v0.1.0
 ```
 
-Every push to `master` builds a new `latest` image for `linux/amd64`. Tagged releases (`v*`) are also published with semver tags.
+Every push to `master` builds a new `latest` image for `linux/amd64` and `linux/arm64`. Tagged releases (`v*`) are also published with semver tags.
 
 ## Environment Variables
 

@@ -3,7 +3,6 @@ package monitor
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -261,68 +260,72 @@ func GetContainerStats(ctx context.Context, containerID string) *ContainerStats 
 		return nil
 	}
 
-	resp, err := cli.ContainerStats(ctx, containerID, false)
+	// Stream stats and read two consecutive frames so CPU% is computed from a
+	// real precpu delta. A one-shot read (stream=false) carries an empty
+	// precpu_stats, which makes every CPU delta ~0.
+	resp, err := cli.ContainerStats(ctx, containerID, true)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
 
-	var raw struct {
-		CPUStats struct {
-			CPUUsage struct {
-				TotalUsage float64 `json:"total_usage"`
-			} `json:"cpu_usage"`
-			SystemCPUUsage float64 `json:"system_cpu_usage"`
-			OnlineCPUs     uint    `json:"online_cpus"`
-		} `json:"cpu_stats"`
-		PrecpuStats struct {
-			CPUUsage struct {
-				TotalUsage float64 `json:"total_usage"`
-			} `json:"cpu_usage"`
-			SystemCPUUsage float64 `json:"system_cpu_usage"`
-		} `json:"precpu_stats"`
-		MemoryStats struct {
-			Usage float64 `json:"usage"`
-			Limit float64 `json:"limit"`
-			Stats struct {
-				Cache float64 `json:"cache"`
-			} `json:"stats"`
-		} `json:"memory_stats"`
-		Networks map[string]struct {
-			RxBytes float64 `json:"rx_bytes"`
-			TxBytes float64 `json:"tx_bytes"`
-		} `json:"networks"`
-	}
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
+	dec := json.NewDecoder(resp.Body)
+	var prev dockerStatsFrame
+	if err := dec.Decode(&prev); err != nil {
 		return nil
 	}
-
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil
+	var cur dockerStatsFrame
+	if err := dec.Decode(&cur); err != nil {
+		// Only one frame arrived; report stats without a CPU delta.
+		return computeContainerStats(prev, prev)
 	}
 
-	cpuDelta := raw.CPUStats.CPUUsage.TotalUsage - raw.PrecpuStats.CPUUsage.TotalUsage
-	systemDelta := raw.CPUStats.SystemCPUUsage - raw.PrecpuStats.SystemCPUUsage
+	return computeContainerStats(prev, cur)
+}
+
+// dockerStatsFrame is one stats payload from the Docker daemon.
+type dockerStatsFrame struct {
+	CPUStats struct {
+		CPUUsage struct {
+			TotalUsage float64 `json:"total_usage"`
+		} `json:"cpu_usage"`
+		SystemCPUUsage float64 `json:"system_cpu_usage"`
+		OnlineCPUs     uint    `json:"online_cpus"`
+	} `json:"cpu_stats"`
+	MemoryStats struct {
+		Usage float64 `json:"usage"`
+		Limit float64 `json:"limit"`
+		Stats struct {
+			Cache float64 `json:"cache"`
+		} `json:"stats"`
+	} `json:"memory_stats"`
+	Networks map[string]struct {
+		RxBytes float64 `json:"rx_bytes"`
+		TxBytes float64 `json:"tx_bytes"`
+	} `json:"networks"`
+}
+
+func computeContainerStats(prev, cur dockerStatsFrame) *ContainerStats {
+	cpuDelta := cur.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage
+	systemDelta := cur.CPUStats.SystemCPUUsage - prev.CPUStats.SystemCPUUsage
 	cpuPercent := 0.0
-	if systemDelta > 0 && raw.CPUStats.OnlineCPUs > 0 {
-		cpuPercent = (cpuDelta / systemDelta) * float64(raw.CPUStats.OnlineCPUs) * 100
+	if systemDelta > 0 && cur.CPUStats.OnlineCPUs > 0 {
+		cpuPercent = (cpuDelta / systemDelta) * float64(cur.CPUStats.OnlineCPUs) * 100
 	}
 
-	cache := raw.MemoryStats.Stats.Cache
-	memUsage := raw.MemoryStats.Usage
+	cache := cur.MemoryStats.Stats.Cache
+	memUsage := cur.MemoryStats.Usage
 	if cache > 0 && memUsage > cache {
 		memUsage = memUsage - cache
 	}
-	memLimit := raw.MemoryStats.Limit
+	memLimit := cur.MemoryStats.Limit
 	memPercent := 0.0
 	if memLimit > 0 {
 		memPercent = (memUsage / memLimit) * 100
 	}
 
 	var rxBytes, txBytes float64
-	for _, net := range raw.Networks {
+	for _, net := range cur.Networks {
 		rxBytes += net.RxBytes
 		txBytes += net.TxBytes
 	}
