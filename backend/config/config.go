@@ -7,17 +7,25 @@ import (
 )
 
 type Server struct {
-	Name    string `yaml:"name"`
-	Host    string `yaml:"host"`
-	Port    int    `yaml:"port"`
-	Type    string `yaml:"type"`
-	Gateway string `yaml:"gateway"`
+	Name               string `yaml:"name"`
+	Host               string `yaml:"host"`
+	Port               int    `yaml:"port"`
+	Type               string `yaml:"type"`
+	Gateway            string `yaml:"gateway"`
+	Timeout            string `yaml:"timeout"`
+	ExpectedStatus     int    `yaml:"expected_status"`
+	FollowRedirects    bool   `yaml:"follow_redirects"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 }
 
 type Service struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
-	Type string `yaml:"type"`
+	Name               string `yaml:"name"`
+	URL                string `yaml:"url"`
+	Type               string `yaml:"type"`
+	Timeout            string `yaml:"timeout"`
+	ExpectedStatus     int    `yaml:"expected_status"`
+	FollowRedirects    bool   `yaml:"follow_redirects"`
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 }
 
 type Config struct {

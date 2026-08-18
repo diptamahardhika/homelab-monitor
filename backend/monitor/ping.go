@@ -2,11 +2,14 @@ package monitor
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/pradiptamahardika/homelab-monitor/config"
 )
 
 var (
@@ -22,8 +25,18 @@ var (
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
-	serverClient = &http.Client{Timeout: 5 * time.Second, Transport: sharedTransport}
-	serviceClient = &http.Client{Timeout: 10 * time.Second, Transport: sharedTransport}
+	// insecureTransport is used only by checks with insecure_skip_verify set.
+	insecureTransport = &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   8,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:     true,
+		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+	}
 )
 
 type ServerStatus struct {
@@ -36,28 +49,66 @@ type ServerStatus struct {
 	Error  string `json:"error,omitempty"`
 }
 
-func CheckServer(ctx context.Context, name, host string, port int, checkType string, dialHost ...string) ServerStatus {
+// parseTimeout converts a config timeout string ("5s") into a duration,
+// falling back to def when empty or malformed.
+func parseTimeout(raw string, def time.Duration) time.Duration {
+	if raw == "" {
+		return def
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
+}
+
+// checkClient builds a per-check http.Client. Transports are shared so
+// connections pool across checks; the client carries per-check behavior
+// (timeout, redirect handling) and is cheap to construct.
+func checkClient(timeout time.Duration, followRedirects, insecure bool) *http.Client {
+	transport := sharedTransport
+	if insecure {
+		transport = insecureTransport
+	}
+	c := &http.Client{Timeout: timeout, Transport: transport}
+	if !followRedirects {
+		c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+	}
+	return c
+}
+
+func CheckServer(ctx context.Context, srv config.Server, dialHost ...string) ServerStatus {
 	status := ServerStatus{
-		Name: name,
-		Host: host,
-		Port: port,
-		Type: checkType,
+		Name: srv.Name,
+		Host: srv.Host,
+		Port: srv.Port,
+		Type: srv.Type,
 	}
 
-	addr := host
+	addr := srv.Host
 	if len(dialHost) > 0 && dialHost[0] != "" {
 		addr = dialHost[0]
 	}
 
 	start := time.Now()
 
-	switch checkType {
+	switch srv.Type {
 	case "http":
-		url := fmt.Sprintf("http://%s:%d", addr, port)
-		if port == 0 || port == 80 || port == 443 {
+		url := fmt.Sprintf("http://%s:%d", addr, srv.Port)
+		if srv.Port == 0 || srv.Port == 80 {
 			url = fmt.Sprintf("http://%s", addr)
+		} else if srv.Port == 443 {
+			url = fmt.Sprintf("https://%s", addr)
 		}
-		resp, err := serverClient.Get(url)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			status.Alive = false
+			status.Error = err.Error()
+			return status
+		}
+		resp, err := checkClient(parseTimeout(srv.Timeout, 5*time.Second), srv.FollowRedirects, srv.InsecureSkipVerify).Do(req)
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -66,13 +117,16 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		}
 		defer resp.Body.Close()
 		status.Alive = resp.StatusCode >= 200 && resp.StatusCode < 500
+		if srv.ExpectedStatus > 0 {
+			status.Alive = resp.StatusCode == srv.ExpectedStatus
+		}
 		if !status.Alive {
 			status.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
 		}
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	case "tcp":
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, port), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -84,7 +138,7 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	default:
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, port), 5*time.Second)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -99,18 +153,24 @@ func CheckServer(ctx context.Context, name, host string, port int, checkType str
 	return status
 }
 
-func CheckService(ctx context.Context, name, rawURL string, checkType string) ServiceStatus {
+func CheckService(ctx context.Context, svc config.Service) ServiceStatus {
 	status := ServiceStatus{
-		Name: name,
-		URL:  rawURL,
-		Type: checkType,
+		Name: svc.Name,
+		URL:  svc.URL,
+		Type: svc.Type,
 	}
 
 	start := time.Now()
 
-	switch checkType {
+	switch svc.Type {
 	case "http":
-		resp, err := serviceClient.Get(rawURL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, svc.URL, nil)
+		if err != nil {
+			status.Status = "down"
+			status.Error = err.Error()
+			return status
+		}
+		resp, err := checkClient(parseTimeout(svc.Timeout, 10*time.Second), svc.FollowRedirects, svc.InsecureSkipVerify).Do(req)
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"
@@ -121,7 +181,14 @@ func CheckService(ctx context.Context, name, rawURL string, checkType string) Se
 		resp.Body.Close()
 		status.ResponseSize = int64(len(body))
 		status.StatusCode = resp.StatusCode
-		if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+
+		if svc.ExpectedStatus > 0 {
+			if resp.StatusCode == svc.ExpectedStatus {
+				status.Status = "up"
+			} else {
+				status.Status = "degraded"
+			}
+		} else if resp.StatusCode >= 200 && resp.StatusCode < 400 {
 			status.Status = "up"
 		} else {
 			status.Status = "degraded"
@@ -135,13 +202,13 @@ func CheckService(ctx context.Context, name, rawURL string, checkType string) Se
 		}
 
 	case "tcp":
-		host, _, err := net.SplitHostPort(rawURL)
+		host, _, err := net.SplitHostPort(svc.URL)
 		if err == nil {
 			if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
 				status.ResolvedIP = ips[0]
 			}
 		}
-		conn, err := net.DialTimeout("tcp", rawURL, 5*time.Second)
+		conn, err := net.DialTimeout("tcp", svc.URL, parseTimeout(svc.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"

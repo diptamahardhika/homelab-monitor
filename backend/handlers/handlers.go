@@ -102,14 +102,14 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 	for i, server := range servers {
 		i, server := i, server
 		tasks = append(tasks, func(ctx context.Context) error {
-			overview.Servers[i] = monitor.CheckServer(ctx, server.Name, server.Host, server.Port, server.Type, gatewayIP)
+			overview.Servers[i] = monitor.CheckServer(ctx, server, gatewayIP)
 			return nil
 		})
 	}
 	for i, service := range services {
 		i, service := i, service
 		tasks = append(tasks, func(ctx context.Context) error {
-			overview.Services[i] = monitor.CheckService(ctx, service.Name, service.URL, service.Type)
+			overview.Services[i] = monitor.CheckService(ctx, service)
 			return nil
 		})
 	}
@@ -250,7 +250,7 @@ func (h *Handler) Servers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for i, s := range allServers {
-		results[i] = monitor.CheckServer(ctx, s.Name, s.Host, s.Port, s.Type, gatewayIP)
+		results[i] = monitor.CheckServer(ctx, s, gatewayIP)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -269,7 +269,7 @@ func (h *Handler) Services(w http.ResponseWriter, r *http.Request) {
 
 	results := make([]monitor.ServiceStatus, len(allSvcs))
 	for i, s := range allSvcs {
-		results[i] = monitor.CheckService(ctx, s.Name, s.URL, s.Type)
+		results[i] = monitor.CheckService(ctx, s)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

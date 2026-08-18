@@ -60,7 +60,7 @@ func TestAddingServiceInvalidatesMonitoringSnapshot(t *testing.T) {
 		t.Fatalf("initial services = %d; want 0", len(before.Services))
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewBufferString(`{"name":"Example","url":"http://127.0.0.1:1","type":"http","timeout":10000000000}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/services", bytes.NewBufferString(`{"name":"Example","url":"http://127.0.0.1:1","type":"http","timeout":"10s"}`))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.AddService(rec, req)
