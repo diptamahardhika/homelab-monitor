@@ -376,6 +376,36 @@ function FilterChips({ options, value, onChange }) {
   )
 }
 
+function SearchInput({ value, onChange, placeholder }) {
+  const ref = useRef(null)
+  return (
+    <div className="relative">
+      <input
+        ref={ref}
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Escape') { onChange('') } }}
+        placeholder={placeholder}
+        className="w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 pl-3 pr-8 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => { onChange(''); ref.current?.focus() }}
+          aria-label="Clear search"
+          title="Clear search"
+          className="absolute inset-y-0 right-0 flex items-center pr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
 function ServerCard({ server, onClick, latencyHistory, onEdit, onDelete, onConfirmDelete, confirmingDelete }) {
   const actions = onEdit || onDelete ? (
     <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-end gap-1.5">
@@ -1522,12 +1552,10 @@ const manualRefresh = async () => {
               value={servicesFilter}
               onChange={setServicesFilter}
             />
-            <input
-              type="text"
+            <SearchInput
               value={servicesSearch}
-              onChange={e => setServicesSearch(e.target.value)}
+              onChange={setServicesSearch}
               placeholder="Search services..."
-              className="w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             />
             <button onClick={() => setShowAddService(true)}
               className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white">
@@ -1637,12 +1665,10 @@ const manualRefresh = async () => {
               value={containersFilter}
               onChange={setContainersFilter}
             />
-            <input
-              type="text"
+            <SearchInput
               value={containersSearch}
-              onChange={e => setContainersSearch(e.target.value)}
+              onChange={setContainersSearch}
               placeholder="Search containers..."
-              className="w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-3 py-1.5 text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
             />
           </div>
         </div>
