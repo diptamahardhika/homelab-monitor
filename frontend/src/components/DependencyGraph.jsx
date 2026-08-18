@@ -212,6 +212,7 @@ export default function DependencyGraph({ servers, services, containers, dark, o
   const [showAdd, setShowAdd] = useState(false)
   const [editing, setEditing] = useState(null)
   const [confirming, setConfirming] = useState(null)
+  const [tableCollapsed, setTableCollapsed] = useState(true)
 
   const fetchDeps = useCallback(async () => {
     try {
@@ -276,9 +277,18 @@ export default function DependencyGraph({ servers, services, containers, dark, o
   return (
     <section className="mb-8" id="dependencies-section">
       <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+        <button
+          onClick={() => setTableCollapsed(c => !c)}
+          className="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+          title={tableCollapsed ? 'Show dependency list' : 'Hide dependency list'}
+          aria-expanded={!tableCollapsed}>
+          <svg
+            className={`w-4 h-4 transition-transform ${tableCollapsed ? '' : 'rotate-180'}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
           Dependencies <span className="text-sm font-normal text-gray-400">({graph.edges.length})</span>
-        </h2>
+        </button>
         <button onClick={() => setShowAdd(true)}
           disabled={services.length === 0 && servers.length === 0}
           title={services.length === 0 && servers.length === 0 ? 'Add a service or server first' : 'Add dependency'}
@@ -355,7 +365,7 @@ export default function DependencyGraph({ servers, services, containers, dark, o
             </svg>
           </div>
 
-          {graph.edges.length > 0 && (
+          {!tableCollapsed && graph.edges.length > 0 && (
             <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 overflow-x-auto">
               <table className="w-full min-w-[420px]">
                 <thead>
