@@ -1361,14 +1361,14 @@ const manualRefresh = async () => {
 
   return (
     <div className="mx-auto max-w-7xl p-6">
-      <header className="mb-8 flex items-center justify-between">
+      <header className="mb-8 flex flex-wrap items-center justify-between gap-y-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">HomeLab Monitor</h1>
           <p className="mt-1 text-sm text-gray-500">Real-time status of your infrastructure</p>
         </div>
         <div className="flex items-center gap-3">
           <div
-            className="flex items-center gap-1.5 text-xs text-gray-400"
+            className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400"
             title={lastUpdated ? `Last updated at ${new Date(lastUpdated).toLocaleTimeString()}` : 'Waiting for first update'}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${lastUpdated && now - lastUpdated < 10000 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
@@ -1431,13 +1431,17 @@ const manualRefresh = async () => {
             className="flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-900/80 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
             aria-label="Refresh data"
           >
-            {refreshing && (
+            {refreshing ? (
               <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
             )}
-            Refresh
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </header>
