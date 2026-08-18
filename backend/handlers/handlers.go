@@ -850,3 +850,20 @@ func (h *Handler) DeleteDependency(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 }
+
+// ReorderDependencies replaces the full dependency list with the provided
+// ordered list, persisting the new order. Used by the frontend drag-and-drop
+// table to persist a manual row arrangement.
+func (h *Handler) ReorderDependencies(w http.ResponseWriter, r *http.Request) {
+	var req []dependencies.Dependency
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := h.depsStore.Replace(req); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "reordered"})
+}

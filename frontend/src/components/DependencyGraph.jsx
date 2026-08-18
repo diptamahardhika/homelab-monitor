@@ -213,6 +213,8 @@ export default function DependencyGraph({ servers, services, containers, dark, o
   const [editing, setEditing] = useState(null)
   const [confirming, setConfirming] = useState(null)
   const [tableCollapsed, setTableCollapsed] = useState(true)
+  const [dragIndex, setDragIndex] = useState(null)
+  const [dragOverIndex, setDragOverIndex] = useState(null)
 
   const fetchDeps = useCallback(async () => {
     try {
@@ -258,6 +260,45 @@ export default function DependencyGraph({ servers, services, containers, dark, o
   const openEdit = (from, to) => {
     setConfirming(null)
     setEditing({ from, to })
+  }
+
+  const resetDrag = () => {
+    setDragIndex(null)
+    setDragOverIndex(null)
+  }
+
+  const handleDrop = (targetIndex) => {
+    if (dragIndex === null || dragIndex === targetIndex) {
+      resetDrag()
+      return
+    }
+    const next = [...graph.edges]
+    const [moved] = next.splice(dragIndex, 1)
+    next.splice(targetIndex, 0, moved)
+    resetDrag()
+    setDeps(next)
+    const persist = async () => {
+      try {
+        const res = await fetch('/api/dependencies/order', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(next),
+        })
+        if (!res.ok) {
+          let msg = `Failed to reorder (${res.status})`
+          try {
+            const data = await res.json()
+            msg = data.error || msg
+          } catch (_) {}
+          throw new Error(msg)
+        }
+        fetchDeps()
+      } catch (e) {
+        showToast(e.message || 'Failed to reorder', 'error')
+        fetchDeps()
+      }
+    }
+    persist()
   }
 
   if (deps === null) {
@@ -370,15 +411,44 @@ export default function DependencyGraph({ servers, services, containers, dark, o
               <table className="w-full min-w-[420px]">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    <th className="py-3 pl-4 pr-2 w-1/2">Depends on</th>
+                    <th className="py-3 pl-4 pr-1 w-8"></th>
+                    <th className="py-3 pl-1 pr-2 w-1/2">Depends on</th>
                     <th className="py-3 px-2 w-1/2">Required by</th>
                     <th className="py-3 pr-4 pl-2 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {graph.edges.map((e, i) => (
-                    <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                      <td className="py-2 pl-4 pr-2">
+                    <tr
+                      key={i}
+                      draggable
+                      onDragStart={(ev) => {
+                        ev.dataTransfer.effectAllowed = 'move'
+                        ev.dataTransfer.setData('text/plain', String(i))
+                        setDragIndex(i)
+                      }}
+                      onDragOver={(ev) => {
+                        if (dragIndex === null) return
+                        ev.preventDefault()
+                        ev.dataTransfer.dropEffect = 'move'
+                        if (dragOverIndex !== i) setDragOverIndex(i)
+                      }}
+                      onDrop={(ev) => {
+                        ev.preventDefault()
+                        handleDrop(i)
+                      }}
+                      onDragEnd={resetDrag}
+                      className={`border-b border-gray-50 dark:border-gray-800/50 last:border-0 ${
+                        dragIndex === i ? 'opacity-40' : ''
+                      } ${dragOverIndex === i && dragIndex !== null ? 'bg-emerald-50 dark:bg-emerald-900/20' : ''}`}
+                      title="Drag to reorder"
+                    >
+                      <td className="py-2 pl-4 pr-1">
+                        <svg className="w-4 h-4 text-gray-300 dark:text-gray-600 cursor-grab active:cursor-grabbing" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M9 5a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM9 12a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0zM9 19a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </td>
+                      <td className="py-2 pl-1 pr-2">
                         <button onClick={() => openNode(e.from)} className="text-sm font-medium text-gray-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors">
                           {e.from}
                         </button>

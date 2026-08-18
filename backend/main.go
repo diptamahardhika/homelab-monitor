@@ -72,6 +72,7 @@ func main() {
 		r.Get("/dependencies", h.GetDependencies)
 		r.Post("/dependencies", h.AddDependency)
 		r.Put("/dependencies", h.UpdateDependency)
+		r.Put("/dependencies/order", h.ReorderDependencies)
 		r.Delete("/dependencies", h.DeleteDependency)
 		r.Get("/history", h.History)
 	})
