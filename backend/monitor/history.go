@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const defaultHistorySamples = 300 // ~50 min at 10s interval
+const defaultHistorySamples = 1000 // ~50 min at 3s interval
 
 // HistorySample is one up/down observation at a point in time.
 type HistorySample struct {
