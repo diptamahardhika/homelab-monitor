@@ -27,9 +27,30 @@ func TestComputeContainerStatsCPUPercent(t *testing.T) {
 	cur := frame(2000, 20000)
 	cur.CPUStats.OnlineCPUs = 1
 
-	stats := computeContainerStats(prev, cur)
+	stats := computeContainerStats(prev, cur, 1)
 	if stats.CPUPercent != 10 {
 		t.Fatalf("expected 10%% CPU, got %v", stats.CPUPercent)
+	}
+}
+
+func TestComputeContainerStatsNetworkSpeed(t *testing.T) {
+	var prev dockerStatsFrame
+	prev.Networks = map[string]struct {
+		RxBytes float64 `json:"rx_bytes"`
+		TxBytes float64 `json:"tx_bytes"`
+	}{"eth0": {RxBytes: 1024 * 1024, TxBytes: 2048 * 1024}}
+	var cur dockerStatsFrame
+	cur.Networks = map[string]struct {
+		RxBytes float64 `json:"rx_bytes"`
+		TxBytes float64 `json:"tx_bytes"`
+	}{"eth0": {RxBytes: 2 * 1024 * 1024, TxBytes: 4 * 1024 * 1024}}
+
+	stats := computeContainerStats(prev, cur, 1)
+	if stats.NetworkRXSpeed != 1024*1024 {
+		t.Fatalf("expected 1 MiB/s RX, got %v", stats.NetworkRXSpeed)
+	}
+	if stats.NetworkTXSpeed != 2*1024*1024 {
+		t.Fatalf("expected 2 MiB/s TX, got %v", stats.NetworkTXSpeed)
 	}
 }
 
@@ -37,7 +58,7 @@ func TestComputeContainerStatsIdenticalFrames(t *testing.T) {
 	// No delta between frames => 0% CPU, not a nonsense negative or NaN.
 	prev := dockerStatsFrame{}
 	prev.CPUStats.OnlineCPUs = 4
-	stats := computeContainerStats(prev, prev)
+	stats := computeContainerStats(prev, prev, 1)
 	if stats.CPUPercent != 0 {
 		t.Fatalf("expected 0%% CPU for identical frames, got %v", stats.CPUPercent)
 	}
@@ -50,7 +71,7 @@ func TestComputeContainerStatsMemory(t *testing.T) {
 	cur.MemoryStats.Limit = 1024 * 1024 * 1024
 	cur.MemoryStats.Stats.Cache = 0
 
-	stats := computeContainerStats(prev, cur)
+	stats := computeContainerStats(prev, cur, 1)
 	if stats.MemoryUsageMB != 512 {
 		t.Fatalf("expected 512 MB usage, got %v", stats.MemoryUsageMB)
 	}

@@ -24,12 +24,14 @@ type DockerContainer struct {
 }
 
 type ContainerStats struct {
-	CPUPercent    float64 `json:"cpu_percent"`
-	MemoryUsageMB float64 `json:"memory_usage_mb"`
-	MemoryLimitMB float64 `json:"memory_limit_mb"`
-	MemoryPercent float64 `json:"memory_percent"`
-	NetworkRxMB   float64 `json:"network_rx_mb"`
-	NetworkTxMB   float64 `json:"network_tx_mb"`
+	CPUPercent     float64 `json:"cpu_percent"`
+	MemoryUsageMB  float64 `json:"memory_usage_mb"`
+	MemoryLimitMB  float64 `json:"memory_limit_mb"`
+	MemoryPercent  float64 `json:"memory_percent"`
+	NetworkRxMB    float64 `json:"network_rx_mb"`
+	NetworkTxMB    float64 `json:"network_tx_mb"`
+	NetworkRXSpeed float64 `json:"network_rx_speed"`
+	NetworkTXSpeed float64 `json:"network_tx_speed"`
 }
 
 type DockerContainerDetail struct {
@@ -274,13 +276,15 @@ func GetContainerStats(ctx context.Context, containerID string) *ContainerStats 
 	if err := dec.Decode(&prev); err != nil {
 		return nil
 	}
+	t0 := time.Now()
 	var cur dockerStatsFrame
 	if err := dec.Decode(&cur); err != nil {
 		// Only one frame arrived; report stats without a CPU delta.
-		return computeContainerStats(prev, prev)
+		return computeContainerStats(prev, prev, 0)
 	}
+	t1 := time.Now()
 
-	return computeContainerStats(prev, cur)
+	return computeContainerStats(prev, cur, t1.Sub(t0).Seconds())
 }
 
 // dockerStatsFrame is one stats payload from the Docker daemon.
@@ -305,7 +309,7 @@ type dockerStatsFrame struct {
 	} `json:"networks"`
 }
 
-func computeContainerStats(prev, cur dockerStatsFrame) *ContainerStats {
+func computeContainerStats(prev, cur dockerStatsFrame, elapsedSec float64) *ContainerStats {
 	cpuDelta := cur.CPUStats.CPUUsage.TotalUsage - prev.CPUStats.CPUUsage.TotalUsage
 	systemDelta := cur.CPUStats.SystemCPUUsage - prev.CPUStats.SystemCPUUsage
 	cpuPercent := 0.0
@@ -324,19 +328,36 @@ func computeContainerStats(prev, cur dockerStatsFrame) *ContainerStats {
 		memPercent = (memUsage / memLimit) * 100
 	}
 
-	var rxBytes, txBytes float64
+	var rxBytes, txBytes, prevRx, prevTx float64
 	for _, net := range cur.Networks {
 		rxBytes += net.RxBytes
 		txBytes += net.TxBytes
 	}
+	for _, net := range prev.Networks {
+		prevRx += net.RxBytes
+		prevTx += net.TxBytes
+	}
+
+	rxSpeed := 0.0
+	txSpeed := 0.0
+	if elapsedSec > 0 {
+		if rxBytes >= prevRx {
+			rxSpeed = (rxBytes - prevRx) / elapsedSec
+		}
+		if txBytes >= prevTx {
+			txSpeed = (txBytes - prevTx) / elapsedSec
+		}
+	}
 
 	return &ContainerStats{
-		CPUPercent:    round2(cpuPercent),
-		MemoryUsageMB: round2(memUsage / 1024 / 1024),
-		MemoryLimitMB: round2(memLimit / 1024 / 1024),
-		MemoryPercent: round2(memPercent),
-		NetworkRxMB:   round2(rxBytes / 1024 / 1024),
-		NetworkTxMB:   round2(txBytes / 1024 / 1024),
+		CPUPercent:     round2(cpuPercent),
+		MemoryUsageMB:  round2(memUsage / 1024 / 1024),
+		MemoryLimitMB:  round2(memLimit / 1024 / 1024),
+		MemoryPercent:  round2(memPercent),
+		NetworkRxMB:    round2(rxBytes / 1024 / 1024),
+		NetworkTxMB:    round2(txBytes / 1024 / 1024),
+		NetworkRXSpeed: round2(rxSpeed),
+		NetworkTXSpeed: round2(txSpeed),
 	}
 }
 

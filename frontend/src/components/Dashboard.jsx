@@ -763,11 +763,17 @@ function ContainerDetail({ item }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let active = true
+    const load = () => {
+      fetch(`/api/docker/${item.id}`)
+        .then(r => r.json())
+        .then(d => { if (active) { setDetail(d); setLoading(false) } })
+        .catch(() => { if (active) setLoading(false) })
+    }
     setLoading(true)
-    fetch(`/api/docker/${item.id}`)
-      .then(r => r.json())
-      .then(d => { setDetail(d); setLoading(false) })
-      .catch(() => setLoading(false))
+    load()
+    const interval = setInterval(load, 3000)
+    return () => { active = false; clearInterval(interval) }
   }, [item.id])
 
   if (loading) {
