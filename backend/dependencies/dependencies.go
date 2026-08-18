@@ -12,10 +12,10 @@ type Dependency struct {
 }
 
 type Store struct {
-	mu           sync.RWMutex
-	deps         []Dependency
-	dataPath     string
-	onChange     func()
+	mu       sync.RWMutex
+	deps     []Dependency
+	dataPath string
+	onChange func()
 }
 
 func New(dataPath string, onChange func()) *Store {
@@ -82,6 +82,70 @@ func (s *Store) Add(dep Dependency) error {
 	}
 	if s.onChange != nil {
 		s.onChange()
+	}
+	return nil
+}
+
+func (s *Store) Replace(deps []Dependency) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Validate: no self-deps and no cycles before persisting anything.
+	if err := validateDeps(deps); err != nil {
+		return err
+	}
+
+	s.deps = make([]Dependency, len(deps))
+	copy(s.deps, deps)
+	if err := s.save(); err != nil {
+		return err
+	}
+	if s.onChange != nil {
+		s.onChange()
+	}
+	return nil
+}
+
+// Validate checks a dependency list for empty endpoints, self-dependencies,
+// and cycles without mutating any state.
+func Validate(deps []Dependency) error {
+	return validateDeps(deps)
+}
+
+func validateDeps(deps []Dependency) error {
+	adj := make(map[string][]string)
+	for _, d := range deps {
+		if d.From == "" || d.To == "" {
+			return &DependencyError{"dependency from and to must not be empty"}
+		}
+		if d.From == d.To {
+			return &DependencyError{"service cannot depend on itself"}
+		}
+		adj[d.From] = append(adj[d.From], d.To)
+	}
+
+	visited := make(map[string]bool)
+	recStack := make(map[string]bool)
+	var dfs func(node string) bool
+	dfs = func(node string) bool {
+		visited[node] = true
+		recStack[node] = true
+		for _, neighbor := range adj[node] {
+			if !visited[neighbor] {
+				if dfs(neighbor) {
+					return true
+				}
+			} else if recStack[neighbor] {
+				return true
+			}
+		}
+		recStack[node] = false
+		return false
+	}
+	for node := range adj {
+		if !visited[node] && dfs(node) {
+			return &DependencyError{"adding this dependency would create a cycle"}
+		}
 	}
 	return nil
 }
