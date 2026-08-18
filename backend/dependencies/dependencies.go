@@ -124,61 +124,71 @@ func validateDeps(deps []Dependency) error {
 		adj[d.From] = append(adj[d.From], d.To)
 	}
 
-	visited := make(map[string]bool)
-	recStack := make(map[string]bool)
-	var dfs func(node string) bool
-	dfs = func(node string) bool {
-		visited[node] = true
-		recStack[node] = true
-		for _, neighbor := range adj[node] {
-			if !visited[neighbor] {
-				if dfs(neighbor) {
-					return true
-				}
-			} else if recStack[neighbor] {
-				return true
-			}
-		}
-		recStack[node] = false
-		return false
-	}
-	for node := range adj {
-		if !visited[node] && dfs(node) {
-			return &DependencyError{"adding this dependency would create a cycle"}
-		}
+	if graphHasCycle(adj) {
+		return &DependencyError{"adding this dependency would create a cycle"}
 	}
 	return nil
 }
 
-func (s *Store) Remove(from, to string) error {
+func (s *Store) Update(from, to string, dep Dependency) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	idx := -1
 	for i, d := range s.deps {
 		if d.From == from && d.To == to {
-			s.deps = append(s.deps[:i], s.deps[i+1:]...)
-			if err := s.save(); err != nil {
-				return err
-			}
-			if s.onChange != nil {
-				s.onChange()
-			}
-			return nil
+			idx = i
+			break
 		}
 	}
-	return &DependencyError{"dependency not found"}
-}
+	if idx == -1 {
+		return &DependencyError{"dependency not found"}
+	}
 
-func (s *Store) wouldCreateCycle(from, to string) bool {
-	// Build adjacency list
+	if dep.From == "" || dep.To == "" {
+		return &DependencyError{"dependency from and to must not be empty"}
+	}
+	if dep.From == dep.To {
+		return &DependencyError{"service cannot depend on itself"}
+	}
+
+	// No-op if nothing changed.
+	if s.deps[idx].From == dep.From && s.deps[idx].To == dep.To {
+		return nil
+	}
+
+	// Check for duplicates, excluding the row being updated.
+	for i, d := range s.deps {
+		if i != idx && d.From == dep.From && d.To == dep.To {
+			return &DependencyError{"dependency already exists"}
+		}
+	}
+
+	// Check for circular dependency: the graph without the old edge, with the
+	// proposed edge added.
 	adj := make(map[string][]string)
-	for _, d := range s.deps {
+	for i, d := range s.deps {
+		if i == idx {
+			continue
+		}
 		adj[d.From] = append(adj[d.From], d.To)
 	}
-	// Add the proposed edge
-	adj[from] = append(adj[from], to)
+	adj[dep.From] = append(adj[dep.From], dep.To)
+	if graphHasCycle(adj) {
+		return &DependencyError{"adding this dependency would create a cycle"}
+	}
 
-	// DFS to detect cycle
+	s.deps[idx] = dep
+	if err := s.save(); err != nil {
+		return err
+	}
+	if s.onChange != nil {
+		s.onChange()
+	}
+	return nil
+}
+
+func graphHasCycle(adj map[string][]string) bool {
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
 
@@ -209,6 +219,37 @@ func (s *Store) wouldCreateCycle(from, to string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Store) Remove(from, to string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, d := range s.deps {
+		if d.From == from && d.To == to {
+			s.deps = append(s.deps[:i], s.deps[i+1:]...)
+			if err := s.save(); err != nil {
+				return err
+			}
+			if s.onChange != nil {
+				s.onChange()
+			}
+			return nil
+		}
+	}
+	return &DependencyError{"dependency not found"}
+}
+
+func (s *Store) wouldCreateCycle(from, to string) bool {
+	// Build adjacency list
+	adj := make(map[string][]string)
+	for _, d := range s.deps {
+		adj[d.From] = append(adj[d.From], d.To)
+	}
+	// Add the proposed edge
+	adj[from] = append(adj[from], to)
+
+	return graphHasCycle(adj)
 }
 
 func (s *Store) GetDependents(service string) []string {

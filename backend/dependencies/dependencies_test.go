@@ -43,7 +43,7 @@ func TestDependencyStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add db->cache failed: %v", err)
 	}
-	
+
 	// This would create cycle: api -> db -> cache -> api
 	err = store.Add(Dependency{From: "cache", To: "api"})
 	if err == nil {
@@ -75,6 +75,81 @@ func TestDependencyStore(t *testing.T) {
 	err = store.Remove("nonexistent", "target")
 	if err == nil {
 		t.Fatal("Remove non-existent should error")
+	}
+}
+
+func TestDependencyStoreUpdate(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "deps_update_*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	store := New(tmpFile.Name(), nil)
+	store.Add(Dependency{From: "api", To: "db"})
+	store.Add(Dependency{From: "db", To: "cache"})
+	store.Add(Dependency{From: "worker", To: "queue"})
+
+	// Update an existing dependency.
+	err = store.Update("api", "db", Dependency{From: "api", To: "cache"})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	deps := store.GetAll()
+	if len(deps) != 3 {
+		t.Fatalf("Expected 3 dependencies after update, got %d: %v", len(deps), deps)
+	}
+	found := false
+	for _, d := range deps {
+		if d.From == "api" && d.To == "cache" {
+			found = true
+		}
+		if d.From == "api" && d.To == "db" {
+			t.Fatal("Old dependency api->db should be gone after update")
+		}
+	}
+	if !found {
+		t.Fatalf("Updated dependency api->cache missing from %v", deps)
+	}
+
+	// Update to a self-dependency should error.
+	err = store.Update("api", "cache", Dependency{From: "api", To: "api"})
+	if err == nil {
+		t.Fatal("Update to self-dependency should error")
+	}
+
+	// Update to a duplicate of another existing dependency should error.
+	err = store.Update("api", "cache", Dependency{From: "worker", To: "queue"})
+	if err == nil {
+		t.Fatal("Update to duplicate dependency should error")
+	}
+
+	// Update that would create a cycle should error and not mutate.
+	// Current graph: api->cache, db->cache, worker->queue.
+	// api->cache -> db->cache would need api->db; instead try db->cache -> api...
+	err = store.Update("db", "cache", Dependency{From: "cache", To: "api"})
+	if err == nil {
+		t.Fatal("Update creating a cycle should error")
+	}
+	deps = store.GetAll()
+	found = false
+	for _, d := range deps {
+		if d.From == "cache" && d.To == "api" {
+			t.Fatal("Cyclic dependency should not have been persisted")
+		}
+		if d.From == "db" && d.To == "cache" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("Original db->cache should survive a rejected update")
+	}
+
+	// Update a non-existent dependency should error.
+	err = store.Update("nonexistent", "target", Dependency{From: "a", To: "b"})
+	if err == nil {
+		t.Fatal("Update non-existent should error")
 	}
 }
 

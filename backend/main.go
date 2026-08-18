@@ -71,6 +71,7 @@ func main() {
 		r.Post("/import", h.ImportConfig)
 		r.Get("/dependencies", h.GetDependencies)
 		r.Post("/dependencies", h.AddDependency)
+		r.Put("/dependencies", h.UpdateDependency)
 		r.Delete("/dependencies", h.DeleteDependency)
 		r.Get("/history", h.History)
 	})

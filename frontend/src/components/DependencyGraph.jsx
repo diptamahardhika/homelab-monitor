@@ -98,9 +98,10 @@ function nodeMeta(name, servers, services, containers) {
 
 export { layoutGraph, nodeMeta }
 
-function AddDependencyModal({ servers, services, existing, onClose, onAdded, onError }) {
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+function AddDependencyModal({ servers, services, existing, initial, onClose, onAdded, onError }) {
+  const isEdit = Boolean(initial)
+  const [from, setFrom] = useState(initial?.from || '')
+  const [to, setTo] = useState(initial?.to || '')
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState(null)
 
@@ -108,7 +109,11 @@ function AddDependencyModal({ servers, services, existing, onClose, onAdded, onE
     { label: 'Services', names: services.map(s => s.name) },
     { label: 'Servers', names: servers.map(s => s.name) },
   ].filter(g => g.names.length > 0)
-  const existingKey = new Set(existing.map(d => `${d.from}\u0000${d.to}`))
+  const existingKey = new Set(
+    existing
+      .filter(d => !(isEdit && d.from === initial.from && d.to === initial.to))
+      .map(d => `${d.from}\u0000${d.to}`)
+  )
 
   const placeholder = groups.length === 0 ? 'Nothing to connect' : 'Select a service or server…'
 
@@ -129,13 +134,16 @@ function AddDependencyModal({ servers, services, existing, onClose, onAdded, onE
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch('/api/dependencies', {
-        method: 'POST',
+      const url = isEdit
+        ? `/api/dependencies?from=${encodeURIComponent(initial.from)}&to=${encodeURIComponent(initial.to)}`
+        : '/api/dependencies'
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ from, to }),
       })
       if (!res.ok) {
-        let msg = 'Failed to add dependency'
+        let msg = isEdit ? 'Failed to update dependency' : 'Failed to add dependency'
         try {
           const data = await res.json()
           msg = data.error || msg
@@ -156,7 +164,7 @@ function AddDependencyModal({ servers, services, existing, onClose, onAdded, onE
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog">
       <div className="absolute inset-0 bg-black/20 dark:bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white dark:bg-gray-950 rounded-xl border border-gray-200 dark:border-gray-800 shadow-2xl p-6 w-full max-w-md mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Dependency</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">{isEdit ? 'Edit Dependency' : 'Add Dependency'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Depends on</label>
@@ -190,7 +198,7 @@ function AddDependencyModal({ servers, services, existing, onClose, onAdded, onE
             </button>
             <button type="submit" disabled={adding}
               className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50 transition-colors">
-              {adding ? 'Saving...' : 'Add'}
+              {adding ? 'Saving...' : isEdit ? 'Save' : 'Add'}
             </button>
           </div>
         </form>
@@ -202,6 +210,7 @@ function AddDependencyModal({ servers, services, existing, onClose, onAdded, onE
 export default function DependencyGraph({ servers, services, containers, dark, onOpenServer, onOpenService, onOpenContainer, showToast }) {
   const [deps, setDeps] = useState(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [editing, setEditing] = useState(null)
   const [confirming, setConfirming] = useState(null)
 
   const fetchDeps = useCallback(async () => {
@@ -243,6 +252,11 @@ export default function DependencyGraph({ servers, services, containers, dark, o
     } catch (e) {
       showToast(e.message || 'Failed to delete', 'error')
     }
+  }
+
+  const openEdit = (from, to) => {
+    setConfirming(null)
+    setEditing({ from, to })
   }
 
   if (deps === null) {
@@ -348,7 +362,7 @@ export default function DependencyGraph({ servers, services, containers, dark, o
                   <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <th className="py-3 pl-4 pr-2 w-1/2">Depends on</th>
                     <th className="py-3 px-2 w-1/2">Required by</th>
-                    <th className="py-3 pr-4 pl-2 w-16"></th>
+                    <th className="py-3 pr-4 pl-2 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -379,14 +393,24 @@ export default function DependencyGraph({ servers, services, containers, dark, o
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => setConfirming(`${e.from}\u0000${e.to}`)}
-                            className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
-                            title={`Remove ${e.from} → ${e.to}`}
-                            aria-label={`Remove ${e.from} to ${e.to}`}>
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <div className="flex items-center justify-end gap-0.5">
+                            <button onClick={() => openEdit(e.from, e.to)}
+                              className="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+                              title={`Edit ${e.from} → ${e.to}`}
+                              aria-label={`Edit ${e.from} to ${e.to}`}>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button onClick={() => setConfirming(`${e.from}\u0000${e.to}`)}
+                              className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-950/30"
+                              title={`Remove ${e.from} → ${e.to}`}
+                              aria-label={`Remove ${e.from} to ${e.to}`}>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -405,6 +429,17 @@ export default function DependencyGraph({ servers, services, containers, dark, o
           existing={graph.edges}
           onClose={() => setShowAdd(false)}
           onAdded={() => { fetchDeps(); showToast('Dependency added') }}
+          onError={msg => showToast(msg, 'error')}
+        />
+      )}
+      {editing && (
+        <AddDependencyModal
+          servers={servers}
+          services={services}
+          existing={graph.edges}
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onAdded={() => { fetchDeps(); showToast('Dependency updated') }}
           onError={msg => showToast(msg, 'error')}
         />
       )}
