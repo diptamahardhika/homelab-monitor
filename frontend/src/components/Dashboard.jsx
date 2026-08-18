@@ -1349,7 +1349,7 @@ const manualRefresh = async () => {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl p-6 space-y-6 animate-pulse">
+      <div className="mx-auto max-w-7xl p-6 space-y-6 animate-pulse">
         <div className="h-8 w-48 bg-gray-200 dark:bg-gray-800 rounded" />
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => <div key={i} className="h-24 bg-gray-200 dark:bg-gray-800 rounded-xl" />)}
@@ -1360,7 +1360,7 @@ const manualRefresh = async () => {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-7xl p-6">
       <header className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">HomeLab Monitor</h1>
