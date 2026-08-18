@@ -1161,7 +1161,7 @@ export default function Dashboard() {
     let interval = null
 
     const startPolling = () => {
-      if (!interval) interval = setInterval(fetchAll, 5000)
+      if (!interval) interval = setInterval(fetchAll, 3000)
     }
     const stopPolling = () => {
       if (interval) {

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultRefreshInterval  = 10 * time.Second
+	defaultRefreshInterval  = 3 * time.Second
 	defaultCheckConcurrency = 6
 )
 
