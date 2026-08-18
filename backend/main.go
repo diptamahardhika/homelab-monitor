@@ -67,6 +67,8 @@ func main() {
 		r.Get("/overview", h.Overview)
 		r.Get("/config", h.GetConfig)
 		r.Put("/config", h.UpdateConfig)
+		r.Get("/export", h.ExportConfig)
+		r.Post("/import", h.ImportConfig)
 		r.Get("/dependencies", h.GetDependencies)
 		r.Post("/dependencies", h.AddDependency)
 		r.Delete("/dependencies", h.DeleteDependency)

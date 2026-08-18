@@ -16,6 +16,7 @@ Built with a **Go** backend and a **React + Vite** frontend styled with **Tailwi
 - **Detail panel** — click any server, service, container, or the system stat card to open a slide-over with full details (close with ✕, backdrop click, or **Esc**)
 - **Search & sort** — filter services and containers by name, and sort columns by name, status, or latency
 - **Service & server management UI** — add, edit, and delete services and servers directly from the dashboard (no SSH required) with in-row delete confirmation and toast feedback
+- **Config export/import** — export the full config (servers, services, dependencies) as JSON and import it back to restore or migrate setups, via the header config menu
 - **Copy-to-clipboard** — one-click copy for hostnames, URLs, IDs, and other values
 - **Live updates** — 5-second polling with a "last updated" indicator and pauses automatically when the tab is hidden
 - **Dark / light theme** — toggle with persisted preference (respects system preference by default)
@@ -162,6 +163,8 @@ Servers and services can also be added, edited, and deleted directly from the da
 | GET | `/api/system` | Host system stats (CPU, memory, disk) |
 | GET | `/api/config` | Load current config (servers, services, port) |
 | PUT | `/api/config` | Update & persist config.yaml |
+| GET | `/api/export` | Export full config as JSON (servers, services, dependencies) |
+| POST | `/api/import` | Import & replace full config from JSON |
 | GET | `/api/dependencies` | List all service dependencies |
 | POST | `/api/dependencies` | Add dependency (`{from, to}`) with cycle detection |
 | DELETE | `/api/dependencies` | Remove dependency (`?from=X&to=Y`) |
@@ -284,7 +287,7 @@ The dashboard gives you an at-a-glance view of your infrastructure:
 - **Services** — sortable table with name, status badge, status code, latency, and uptime %; search, add, edit, and delete (with confirmation) right from the section
 - **Docker Containers** — sortable table with name, state, status text, and ports; searchable; container ports show clickable **http/https** links so you can jump straight to a service running in a container
 - **Detail panel** — click any item to open a slide-over with full details: uptime percentage, latency sparkline (min/avg/max), resolved IP, response size, container performance stats, mounts, and environment variables. Close with the ✕ button, clicking the backdrop, or pressing **Esc**.
-- **Header** — theme toggle (dark/light), manual refresh button with loading state, and a live "last updated" indicator
+- **Header** — theme toggle (dark/light), config menu (export/import JSON), manual refresh button with loading state, and a live "last updated" indicator
 - **Footer** — build version shown at the bottom (e.g. `v0.1.0`, injected at build time)
 
 ## Alerting
