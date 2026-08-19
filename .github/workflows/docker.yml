@@ -48,6 +48,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Compute commit info
+        id: commit
+        run: |
+          echo "sha=$(git rev-parse --short=8 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "time=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -76,6 +82,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ github.ref_name }}
+            COMMIT=${{ steps.commit.outputs.sha }}
+            COMMIT_TIME=${{ steps.commit.outputs.time }}
           platforms: linux/${{ matrix.platform }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
