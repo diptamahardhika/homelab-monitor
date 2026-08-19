@@ -5,6 +5,14 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IMAGE="homelab-monitor:latest"
 CONTAINER="homelab-monitor"
 
+# Load .env if present (AUTH_TOKEN etc.)
+if [ -f "$PROJECT_DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$PROJECT_DIR/.env"
+  set +a
+fi
+
 echo "==> Building Docker image from current source..."
 docker build -t "$IMAGE" "$PROJECT_DIR"
 
@@ -14,6 +22,7 @@ docker rm -f "$CONTAINER" 2>/dev/null || true
 docker run -d \
   --name "$CONTAINER" \
   -p 9876:9876 \
+  -e AUTH_TOKEN="${AUTH_TOKEN:-}" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PROJECT_DIR/data:/app/data" \
   "$IMAGE"

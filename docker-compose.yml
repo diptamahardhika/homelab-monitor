@@ -5,6 +5,10 @@ services:
     container_name: homelab-monitor
     ports:
       - "9876:9876"
+    environment:
+      # Generate one with: openssl rand -hex 32
+      # Keep it in a .env file next to this compose file (already gitignored).
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
