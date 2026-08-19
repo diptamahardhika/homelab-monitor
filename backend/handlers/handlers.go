@@ -20,8 +20,12 @@ const (
 	defaultCheckConcurrency = 6
 )
 
-// Version is injected at build time via -ldflags.
-var Version = "dev"
+// Build info is injected at build time via -ldflags.
+var (
+	Version    = "dev"
+	Commit     = ""
+	CommitTime = ""
+)
 
 type Overview struct {
 	Servers    []monitor.ServerStatus    `json:"servers"`
@@ -225,7 +229,11 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"version": Version})
+	json.NewEncoder(w).Encode(map[string]string{
+		"version":     Version,
+		"commit":      Commit,
+		"commit_time": CommitTime,
+	})
 }
 
 func (h *Handler) Overview(w http.ResponseWriter, r *http.Request) {

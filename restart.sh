@@ -14,7 +14,13 @@ if [ -f "$PROJECT_DIR/.env" ]; then
 fi
 
 echo "==> Building Docker image from current source..."
-docker build -t "$IMAGE" "$PROJECT_DIR"
+COMMIT="$(git rev-parse --short=8 HEAD)"
+if ! git diff --quiet 2>/dev/null; then COMMIT="${COMMIT}-dirty"; fi
+COMMIT_TIME="$(git log -1 --format=%cI)"
+docker build -t "$IMAGE" \
+  --build-arg COMMIT="$COMMIT" \
+  --build-arg COMMIT_TIME="$COMMIT_TIME" \
+  "$PROJECT_DIR"
 
 echo "==> Restarting container..."
 docker rm -f "$CONTAINER" 2>/dev/null || true
