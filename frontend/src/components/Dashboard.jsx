@@ -1130,72 +1130,106 @@ export default function Dashboard() {
     statusIndicator()
   }, [statusIndicator])
 
+  const applyData = useCallback((overview, hist) => {
+    const serversData = Array.isArray(overview.servers) ? overview.servers : []
+    const servicesData = Array.isArray(overview.services) ? overview.services : []
+    setServers(serversData)
+    setServices(servicesData)
+    setContainers(Array.isArray(overview.containers) ? overview.containers : [])
+    setSystemStats(overview.system)
+    historyStatsRef.current = hist && typeof hist === 'object' ? hist : {}
+
+    const newHistory = { ...latencyHistoryRef.current }
+    for (const item of [...serversData, ...servicesData]) {
+      if (!newHistory[item.name]) newHistory[item.name] = []
+      const val = parseInt(item.latency, 10)
+      if (!isNaN(val)) {
+        newHistory[item.name].push(val)
+      }
+      if (newHistory[item.name].length > 30) {
+        newHistory[item.name].shift()
+      }
+    }
+    latencyHistoryRef.current = newHistory
+
+    setError(null)
+    setLastUpdated(Date.now())
+  }, [])
+
   const fetchAll = useCallback(async () => {
     try {
       const [overview, hist] = await Promise.all([
         apiFetch('/api/overview').then(r => r.json()),
         apiFetch('/api/history').then(r => r.json()).catch(() => ({})),
       ])
-      const serversData = Array.isArray(overview.servers) ? overview.servers : []
-      const servicesData = Array.isArray(overview.services) ? overview.services : []
-      setServers(serversData)
-      setServices(servicesData)
-      setContainers(Array.isArray(overview.containers) ? overview.containers : [])
-      setSystemStats(overview.system)
-      historyStatsRef.current = hist && typeof hist === 'object' ? hist : {}
-
-      const newHistory = { ...latencyHistoryRef.current }
-      for (const item of [...serversData, ...servicesData]) {
-        if (!newHistory[item.name]) newHistory[item.name] = []
-        const val = parseInt(item.latency, 10)
-        if (!isNaN(val)) {
-          newHistory[item.name].push(val)
-        }
-        if (newHistory[item.name].length > 30) {
-          newHistory[item.name].shift()
-        }
-      }
-      latencyHistoryRef.current = newHistory
-
-      setError(null)
-      setLastUpdated(Date.now())
+      applyData(overview, hist)
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [applyData])
 
   useEffect(() => {
+    let es = null
     let interval = null
+    let polling = false
 
     const startPolling = () => {
-      if (!interval) interval = setInterval(fetchAll, 3000)
+      if (!polling) {
+        polling = true
+        interval = setInterval(fetchAll, 3000)
+      }
     }
     const stopPolling = () => {
       if (interval) {
         clearInterval(interval)
         interval = null
       }
+      polling = false
     }
-    const onVisibility = () => {
-      if (document.hidden) {
-        stopPolling()
-      } else {
-        fetchAll()
-        startPolling()
+
+    // SSE pushes every refresh; on failure EventSource auto-reconnects while we
+    // fall back to polling so the dashboard stays live (and 401s surface to the
+    // token gate via apiFetch).
+    const connectSSE = () => {
+      es = new EventSource('/api/events')
+      es.onopen = () => stopPolling()
+      es.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data)
+          applyData(data.overview, data.history)
+        } catch (_) {}
+      }
+      es.onerror = () => {
+        if (!document.hidden) startPolling()
+      }
+    }
+    const closeSSE = () => {
+      if (es) {
+        es.close()
+        es = null
       }
     }
 
-    fetchAll()
-    startPolling()
+    const onVisibility = () => {
+      if (document.hidden) {
+        closeSSE()
+        stopPolling()
+      } else {
+        fetchAll().then(connectSSE)
+      }
+    }
+
+    fetchAll().then(connectSSE)
     document.addEventListener('visibilitychange', onVisibility)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
+      closeSSE()
       stopPolling()
     }
-  }, [fetchAll])
+  }, [fetchAll, applyData])
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)

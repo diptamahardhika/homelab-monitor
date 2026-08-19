@@ -11,6 +11,7 @@ import (
 type SnapshotCache[T any] struct {
 	interval time.Duration
 	refresh  func(context.Context) (T, error)
+	notify   func(T)
 
 	mu        sync.RWMutex
 	snapshot  T
@@ -22,6 +23,14 @@ type SnapshotCache[T any] struct {
 
 func NewSnapshotCache[T any](interval time.Duration, refresh func(context.Context) (T, error)) *SnapshotCache[T] {
 	return &SnapshotCache[T]{interval: interval, refresh: refresh}
+}
+
+// SetNotify registers a callback invoked (outside the cache lock) every time a
+// refresh produces a fresh snapshot. Used to push updates to SSE subscribers.
+func (c *SnapshotCache[T]) SetNotify(fn func(T)) {
+	c.mu.Lock()
+	c.notify = fn
+	c.mu.Unlock()
 }
 
 func (c *SnapshotCache[T]) Snapshot() (T, bool) {
@@ -85,7 +94,12 @@ func (c *SnapshotCache[T]) refreshLocked(ctx context.Context) error {
 	c.snapshot = snapshot
 	c.hasValue = true
 	c.updatedAt = time.Now()
+	notify := c.notify
 	c.mu.Unlock()
+
+	if notify != nil {
+		notify(snapshot)
+	}
 	return nil
 }
 
