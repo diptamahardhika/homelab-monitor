@@ -1829,9 +1829,11 @@ const manualRefresh = async () => {
 
       <footer className="mt-10 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs text-gray-400">
         <span>HomeLab Monitor</span>
-        {commit ? (
-          <span className="font-mono">{commit}{commitTime && ` · ${formatRelative(new Date(commitTime).getTime(), now)}`}</span>
-        ) : version && <span className="font-mono">v{version}</span>}
+        <a href="https://github.com/diptamahardhika/homelab-monitor" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 dark:hover:text-gray-300">
+          {commit ? (
+            <span className="font-mono">{commit}{commitTime && ` · ${formatRelative(new Date(commitTime).getTime(), now)}`}</span>
+          ) : version && <span className="font-mono">v{version}</span>}
+        </a>
       </footer>
     </div>
   )
