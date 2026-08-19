@@ -713,7 +713,8 @@ function formatRelative(ts, now) {
   if (diff < 5) return 'just now'
   if (diff < 60) return `${diff}s ago`
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  return `${Math.floor(diff / 3600)}h ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
 function formatBytes(n) {
@@ -1058,6 +1059,8 @@ export default function Dashboard() {
   const [editingServer, setEditingServer] = useState(null)
   const [confirmingServerDelete, setConfirmingServerDelete] = useState(null)
   const [version, setVersion] = useState(null)
+  const [commit, setCommit] = useState(null)
+  const [commitTime, setCommitTime] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [now, setNow] = useState(Date.now())
@@ -1098,7 +1101,11 @@ export default function Dashboard() {
   useEffect(() => {
     apiFetch('/api/version')
       .then(r => r.json())
-      .then(d => { if (d && d.version) setVersion(d.version) })
+      .then(d => {
+        if (d && d.version) setVersion(d.version)
+        if (d && d.commit) setCommit(d.commit)
+        if (d && d.commit_time) setCommitTime(d.commit_time)
+      })
       .catch(() => {})
   }, [])
 
@@ -1822,7 +1829,9 @@ const manualRefresh = async () => {
 
       <footer className="mt-10 pt-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-between text-xs text-gray-400">
         <span>HomeLab Monitor</span>
-        {version && <span className="font-mono">v{version}</span>}
+        {commit ? (
+          <span className="font-mono">{commit}{commitTime && ` · ${formatRelative(new Date(commitTime).getTime(), now)}`}</span>
+        ) : version && <span className="font-mono">v{version}</span>}
       </footer>
     </div>
   )
