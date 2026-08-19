@@ -18,7 +18,7 @@ Built with a **Go** backend and a **React + Vite** frontend styled with **Tailwi
 - **Service & server management UI** — add, edit, and delete services and servers directly from the dashboard (no SSH required) with in-row delete confirmation and toast feedback
 - **Config export/import** — export the full config (servers, services, dependencies) as JSON and import it back to restore or migrate setups, via the header config menu
 - **Copy-to-clipboard** — one-click copy for hostnames, URLs, IDs, and other values
-- **Live updates** — 5-second polling with a "last updated" indicator and pauses automatically when the tab is hidden
+- **Live updates** — near-real-time updates pushed over Server-Sent Events (`/api/events`), with a polling fallback and a "last updated" indicator; pauses automatically when the tab is hidden
 - **Dark / light theme** — toggle with persisted preference (respects system preference by default)
 - **Per-section empty states** — helpful guidance when nothing is configured yet, plus search no-results states
 - **REST API** — full CRUD for services, config, and dependencies, plus uptime history
@@ -169,6 +169,7 @@ Servers and services can also be added, edited, and deleted directly from the da
 | POST | `/api/dependencies` | Add dependency (`{from, to}`) with cycle detection |
 | DELETE | `/api/dependencies` | Remove dependency (`?from=X&to=Y`) |
 | GET | `/api/history` | Uptime stats for every tracked server and service |
+| GET | `/api/events` | Server-Sent Events stream of `{overview, history}` updates pushed on every refresh (drives the live dashboard) |
 
 ### Service Management (POST /api/services)
 

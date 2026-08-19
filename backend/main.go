@@ -71,6 +71,7 @@ func main() {
 			r.Get("/docker/{id}", h.DockerContainerDetail)
 			r.Get("/system", h.System)
 			r.Get("/overview", h.Overview)
+			r.Get("/events", h.Events)
 			r.Get("/config", h.GetConfig)
 			r.Put("/config", h.UpdateConfig)
 			r.Get("/export", h.ExportConfig)

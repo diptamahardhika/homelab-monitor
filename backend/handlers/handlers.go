@@ -42,6 +42,7 @@ type Handler struct {
 	depsStore     *dependencies.Store
 	alerts        *monitor.AlertManager
 	history       *monitor.HistoryStore
+	sse           *sseHub
 }
 
 func New(cfg *config.Config, dataPath string) *Handler {
@@ -58,7 +59,9 @@ func New(cfg *config.Config, dataPath string) *Handler {
 	h := &Handler{cfg: cfg, dataPath: dataPath, configPath: configPath}
 	h.loadExtraServices()
 	h.loadExtraServers()
+	h.sse = newSSEHub()
 	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
+	h.cache.SetNotify(h.pushSnapshot)
 
 	depsPath := filepath.Join(dataDir, "dependencies.json")
 	h.depsStore = dependencies.New(depsPath, func() { h.cache.Invalidate() })
