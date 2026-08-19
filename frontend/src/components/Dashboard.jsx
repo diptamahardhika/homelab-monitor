@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import DependencyGraph from './DependencyGraph'
+import { apiFetch, clearToken } from '../api'
 
 function SunIcon() {
   return (
@@ -22,6 +23,14 @@ function GearIcon() {
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  )
+}
+
+function LockIcon() {
+  return (
+    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
     </svg>
   )
 }
@@ -765,7 +774,7 @@ function ContainerDetail({ item }) {
   useEffect(() => {
     let active = true
     const load = () => {
-      fetch(`/api/docker/${item.id}`)
+      apiFetch(`/api/docker/${item.id}`)
         .then(r => r.json())
         .then(d => { if (active) { setDetail(d); setLoading(false) } })
         .catch(() => { if (active) setLoading(false) })
@@ -873,7 +882,7 @@ function AddServiceModal({ initial, onClose, onAdded, onError }) {
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch(isEdit ? `/api/services/${encodeURIComponent(initial.name)}` : '/api/services', {
+      const res = await apiFetch(isEdit ? `/api/services/${encodeURIComponent(initial.name)}` : '/api/services', {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, url, type }),
@@ -954,7 +963,7 @@ function ServerModal({ initial, onClose, onAdded, onError }) {
     setAdding(true)
     setError(null)
     try {
-      const res = await fetch(isEdit ? `/api/servers/${encodeURIComponent(initial.name)}` : '/api/servers', {
+      const res = await apiFetch(isEdit ? `/api/servers/${encodeURIComponent(initial.name)}` : '/api/servers', {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, host, port: parseInt(port, 10) || 0, type, gateway }),
@@ -1087,7 +1096,7 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    fetch('/api/version')
+    apiFetch('/api/version')
       .then(r => r.json())
       .then(d => { if (d && d.version) setVersion(d.version) })
       .catch(() => {})
@@ -1124,8 +1133,8 @@ export default function Dashboard() {
   const fetchAll = useCallback(async () => {
     try {
       const [overview, hist] = await Promise.all([
-        fetch('/api/overview').then(r => r.json()),
-        fetch('/api/history').then(r => r.json()).catch(() => ({})),
+        apiFetch('/api/overview').then(r => r.json()),
+        apiFetch('/api/history').then(r => r.json()).catch(() => ({})),
       ])
       const serversData = Array.isArray(overview.servers) ? overview.servers : []
       const servicesData = Array.isArray(overview.services) ? overview.services : []
@@ -1201,7 +1210,7 @@ export default function Dashboard() {
   const confirmDelete = async (name) => {
     setConfirmingDelete(null)
     try {
-      const res = await fetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
       if (!res.ok) {
         let msg = `Failed to delete (${res.status})`
         try {
@@ -1220,7 +1229,7 @@ export default function Dashboard() {
   const confirmServerDelete = async (name) => {
     setConfirmingServerDelete(null)
     try {
-      const res = await fetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
       if (!res.ok) {
         let msg = `Failed to delete (${res.status})`
         try {
@@ -1272,7 +1281,7 @@ const manualRefresh = async () => {
   const exportConfig = async () => {
     setShowConfigMenu(false)
     try {
-      const res = await fetch('/api/export')
+      const res = await apiFetch('/api/export')
       if (!res.ok) {
         let msg = `Failed to export (${res.status})`
         try {
@@ -1306,7 +1315,7 @@ const manualRefresh = async () => {
       if (!parsed || !Array.isArray(parsed.servers) || !Array.isArray(parsed.services)) {
         throw new Error('Invalid config file: expected servers and services arrays')
       }
-      const res = await fetch('/api/import', {
+      const res = await apiFetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(parsed),
@@ -1383,6 +1392,11 @@ const manualRefresh = async () => {
   const visibleServices = filterAndSort(filteredServices, servicesSearch, servicesSort, s => s.name, statusRank, s => parseInt(s.latency, 10))
   const visibleContainers = filterAndSort(filteredContainers, containersSearch, containersSort, c => c.name || c.id, containerRank, c => null, c => c.state, c => c.status, true)
 
+  const lockDashboard = () => {
+    clearToken()
+    window.dispatchEvent(new Event('auth:unauthorized'))
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-7xl p-6 space-y-6 animate-pulse">
@@ -1417,6 +1431,14 @@ const manualRefresh = async () => {
             aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {dark ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <button
+            onClick={lockDashboard}
+            className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-2 text-gray-500 transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:text-gray-700 dark:hover:text-white active:scale-95"
+            title="Lock dashboard"
+            aria-label="Lock dashboard"
+          >
+            <LockIcon />
           </button>
           <div className="relative" ref={configMenuRef}>
             <button

@@ -276,6 +276,61 @@ Every push to `master` builds a new `latest` image for `linux/amd64` and `linux/
 | `STATIC_DIR` | `/app/static` | Path to the frontend static files |
 | `DATA_PATH` | `/app/data/extra_services.json` | Path to persist UI-added services; a runtime `config.yaml` in the same directory holds UI edits to config-defined items |
 | `ALERT_WEBHOOK_URL` | (empty) | Webhook URL to receive up/down alerts (Discord/Slack compatible) |
+| `AUTH_TOKEN` | (empty) | Shared access token that locks the dashboard behind a single passphrase. Empty = auth disabled |
+
+## Authentication
+
+By default the dashboard is wide open. To lock it down, set a single shared token via the `AUTH_TOKEN` environment variable — no username, no user store, no signup flow. Anyone with the token has full dashboard access.
+
+### Generate a token
+
+Run one of these to create a strong random value:
+
+```bash
+openssl rand -hex 32
+# or
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Example output: `3f8a2c1b7d9e4f5a6b8c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a`
+
+### Set it up
+
+**Docker run:**
+
+```bash
+docker run -d \
+  --name homelab-monitor \
+  -p 9876:9876 \
+  -e AUTH_TOKEN=3f8a2c1b7d9e4f5a6b8c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  ghcr.io/diptamahardhika/homelab-monitor:latest
+```
+
+**Docker Compose** (keep the token in a gitignored `.env` file):
+
+```bash
+# .env  (already in .gitignore)
+AUTH_TOKEN=3f8a2c1b7d9e4f5a6b8c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a
+```
+
+Then `docker compose up -d`. The compose file already passes `AUTH_TOKEN: ${AUTH_TOKEN:-}` through.
+
+### Using it
+
+- **Browser** — load the dashboard, paste the token once into the unlock screen; your browser remembers it (via `localStorage`) until you click the 🔒 Lock button in the header.
+- **curl / scripts** — send it as a bearer header or query param:
+
+  ```bash
+  curl -H "Authorization: Bearer 3f8a2c1b..." http://localhost:9876/api/overview
+  curl "http://localhost:9876/api/overview?token=3f8a2c1b..."
+  ```
+
+### Lost your token?
+
+There's no recovery — generate a new one, update `AUTH_TOKEN`, and restart the container. **All your data is untouched** (servers, services, dependencies, uptime history are persisted separately in the `DATA_PATH` volume); the dashboard is simply locked until you enter a valid token again.
+
+> **Note:** the token travels over plain HTTP. On a home LAN this is usually fine, but if you expose the dashboard beyond your network, put a TLS reverse proxy (Caddy/Traefik) in front of it. `/api/health` stays unauthenticated so Docker HEALTHCHECKs and uptime bots keep working.
 
 ## Dashboard
 
@@ -287,7 +342,7 @@ The dashboard gives you an at-a-glance view of your infrastructure:
 - **Services** — sortable table with name, status badge, status code, latency, and uptime %; search, add, edit, and delete (with confirmation) right from the section
 - **Docker Containers** — sortable table with name, state, status text, and ports; searchable; container ports show clickable **http/https** links so you can jump straight to a service running in a container
 - **Detail panel** — click any item to open a slide-over with full details: uptime percentage, latency sparkline (min/avg/max), resolved IP, response size, container performance stats, mounts, and environment variables. Close with the ✕ button, clicking the backdrop, or pressing **Esc**.
-- **Header** — theme toggle (dark/light), config menu (export/import JSON), manual refresh button with loading state, and a live "last updated" indicator
+- **Header** — theme toggle (dark/light), config menu (export/import JSON), a 🔒 lock button (clears the stored token, shown when `AUTH_TOKEN` is set), manual refresh button with loading state, and a live "last updated" indicator
 - **Footer** — build version shown at the bottom (e.g. `v0.1.0`, injected at build time)
 
 ## Alerting
