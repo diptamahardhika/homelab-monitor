@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../api'
 import { Dot, StatusBadge, UptimeCard, LatencySparkline, CopyButton, DetailRow, Bar, formatSpeed, formatBytes, formatTime, SparklineChart } from './ui'
 
-function MetricChart({ label, values, color, live, format, usage }) {
+function MetricChart({ label, values, color, live, format, usage, domain }) {
   const series = live != null && values.length ? [...values, live] : values
   const readout = live != null ? format(live) : (values.length ? format(values[values.length - 1]) : '—')
   return (
@@ -15,7 +15,7 @@ function MetricChart({ label, values, color, live, format, usage }) {
         </span>
       </div>
       {series.length >= 2 ? (
-        <SparklineChart values={series} color={color} height={48} width={200} />
+        <SparklineChart values={series} color={color} height={48} width={200} domain={domain} />
       ) : (
         <p className="text-xs text-gray-400">Collecting data…</p>
       )}
@@ -60,6 +60,7 @@ function SystemDetail({ stats }) {
           live={stats.cpu_usage_percent}
           format={v => `${v}%`}
           usage={`${stats.cpu_count} cores`}
+          domain={[0, 100]}
         />
         <MetricChart
           label="Memory"
@@ -68,6 +69,7 @@ function SystemDetail({ stats }) {
           live={stats.memory_used_percent}
           format={v => `${v}%`}
           usage={`${gb(stats.memory_used_mb)} / ${gb(stats.memory_total_mb)} GB`}
+          domain={[0, 100]}
         />
         <MetricChart
           label="Storage"
@@ -76,6 +78,7 @@ function SystemDetail({ stats }) {
           live={stats.disk_used_percent}
           format={v => `${v}%`}
           usage={`${stats.disk_used_gb} / ${stats.disk_total_gb} GB`}
+          domain={[0, 100]}
         />
       </div>
 

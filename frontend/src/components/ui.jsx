@@ -286,15 +286,16 @@ export function StatCard({ title, value, subtitle, accent, onClick, children }) 
 }
 
 // SparklineChart renders a single trend line with a soft area fill.
-export function SparklineChart({ values, color = 'emerald', height = 48, width = 200 }) {
+export function SparklineChart({ values, color = 'emerald', height = 48, width = 200, domain }) {
   if (!values || values.length < 2) return null
   const nums = values.map(v => (typeof v === 'number' ? v : parseFloat(v) || 0))
-  const max = Math.max(...nums)
-  const min = Math.min(...nums)
-  const range = max - min || 1
+  const lo = domain ? domain[0] : Math.min(...nums)
+  const hi = domain ? domain[1] : Math.max(...nums)
+  const range = hi - lo || 1
+  const clamp = v => Math.min(hi, Math.max(lo, v))
   const points = nums.map((v, i) => {
     const x = (i / (nums.length - 1)) * width
-    const y = height - ((v - min) / range) * (height - 8) - 4
+    const y = height - ((clamp(v) - lo) / range) * (height - 8) - 4
     return `${x},${y}`
   }).join(' ')
   const gradId = `spark-${color}-${height}-${nums.length}`
