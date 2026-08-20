@@ -1,6 +1,19 @@
 import { useState } from 'react'
 import { FilterChips, SearchInput, SortHeader, StatusBadge, PortLinks, EmptyState, filterAndSort, toggleSort, containerRank } from './ui'
 
+function MiniUsage({ pct, fill }) {
+  const clamped = Math.max(0, Math.min(100, pct))
+  const hot = clamped >= 90
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-12 h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+        <div className={`h-full transition-all ${hot ? 'bg-rose-500' : fill}`} style={{ width: `${clamped}%` }} />
+      </div>
+      <span className="text-xs font-mono text-gray-500 tabular-nums">{Math.round(pct)}%</span>
+    </div>
+  )
+}
+
 export default function ContainerGrid({ containers, onOpen }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
@@ -38,11 +51,13 @@ export default function ContainerGrid({ containers, onOpen }) {
           <EmptyState title="No containers match your search" hint="Try a different search term." />
         ) : (
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 backdrop-blur-sm overflow-x-auto transition-colors">
-          <table className="w-full min-w-[640px]">
+          <table className="w-full table-fixed">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <SortHeader label="Container" sortKey="name" sort={sort} onSort={k => toggleSort(setSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
                 <SortHeader label="State" sortKey="status" sort={sort} onSort={k => toggleSort(setSort, k)} />
+                <th className="py-3 pl-2 pr-2">CPU</th>
+                <th className="py-3 pl-2 pr-2">Mem</th>
                 <SortHeader label="Status" sortKey="statustext" sort={sort} onSort={k => toggleSort(setSort, k)} />
                 <th className="py-3 pl-2 pr-4">Ports</th>
               </tr>
@@ -50,7 +65,7 @@ export default function ContainerGrid({ containers, onOpen }) {
             <tbody>
               {visible.map((c, i) => (
                 <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                  <td className="py-0 pl-4 pr-2">
+                  <td className="py-0 pl-5 pr-2">
                     <button onClick={() => onOpen(c)} className="group flex items-center w-full py-3 text-left">
                       <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${c.state === 'running' ? 'bg-emerald-500 dark:bg-emerald-400' : c.state === 'paused' ? 'bg-amber-500 dark:bg-amber-400' : 'bg-gray-400 dark:bg-gray-500'}`} />
                       <div className="min-w-0">
@@ -60,8 +75,14 @@ export default function ContainerGrid({ containers, onOpen }) {
                     </button>
                   </td>
                   <td className="py-3 px-2"><StatusBadge status={c.state} /></td>
-                  <td className="py-3 px-2 text-sm text-gray-500">{c.status}</td>
-                  <td className="py-3 pl-2 pr-4 text-xs text-gray-500"><PortLinks ports={c.ports} /></td>
+                  <td className="py-3 px-2">
+                    {c.stats ? <MiniUsage pct={c.stats.cpu_percent} fill="bg-emerald-500" /> : <span className="text-xs text-gray-400">—</span>}
+                  </td>
+                  <td className="py-3 px-2">
+                    {c.stats ? <MiniUsage pct={c.stats.memory_percent} fill="bg-blue-500" /> : <span className="text-xs text-gray-400">—</span>}
+                  </td>
+                  <td className="py-3 px-2 text-sm text-gray-500 truncate max-w-[200px]">{c.status}</td>
+                  <td className="py-3 pl-2 pr-4 text-xs text-gray-500 truncate max-w-[160px]"><PortLinks ports={c.ports} /></td>
                 </tr>
               ))}
             </tbody>

@@ -14,13 +14,14 @@ import (
 )
 
 type DockerContainer struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Image   string `json:"image"`
-	State   string `json:"state"`
-	Status  string `json:"status"`
-	Ports   string `json:"ports"`
-	Created int64  `json:"created"`
+	ID      string          `json:"id"`
+	Name    string          `json:"name"`
+	Image   string          `json:"image"`
+	State   string          `json:"state"`
+	Status  string          `json:"status"`
+	Ports   string          `json:"ports"`
+	Created int64           `json:"created"`
+	Stats   *ContainerStats `json:"stats,omitempty"`
 }
 
 type ContainerStats struct {
@@ -146,6 +147,26 @@ func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 			Status:  c.Status,
 			Ports:   ports,
 			Created: c.Created,
+		})
+	}
+
+	// Attach live CPU/memory stats for running containers. Each stats call
+	// streams two frames (~1s) for an accurate CPU delta, so run them in
+	// parallel with bounded concurrency.
+	running := make([]int, 0, len(result))
+	for i, c := range result {
+		if c.State == "running" {
+			running = append(running, i)
+		}
+	}
+	if len(running) > 0 {
+		statsCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		_ = RunBounded(statsCtx, running, 4, func(ctx context.Context, i int) error {
+			if st := GetContainerStats(ctx, result[i].ID); st != nil {
+				result[i].Stats = st
+			}
+			return nil
 		})
 	}
 
