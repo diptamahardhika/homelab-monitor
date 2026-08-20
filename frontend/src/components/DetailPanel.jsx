@@ -1,35 +1,56 @@
 import { useState, useEffect } from 'react'
 import { apiFetch } from '../api'
-import { Dot, StatusBadge, UptimeCard, LatencySparkline, CopyButton, DetailRow, Bar, formatSpeed, formatBytes, formatTime } from './ui'
+import { Dot, StatusBadge, UptimeCard, LatencySparkline, CopyButton, DetailRow, Bar, formatSpeed, formatBytes, formatTime, SparklineChart } from './ui'
+
+function MetricChart({ label, values, color, format }) {
+  const last = values.length ? values[values.length - 1] : null
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
+        <span className="text-sm font-mono text-gray-500">{last != null ? format(last) : '—'}</span>
+      </div>
+      {values.length >= 2 ? (
+        <SparklineChart values={values} color={color} height={48} width={200} />
+      ) : (
+        <p className="text-xs text-gray-400">Collecting data…</p>
+      )}
+    </div>
+  )
+}
 
 function SystemDetail({ stats }) {
+  const [series, setSeries] = useState([])
+
+  useEffect(() => {
+    let active = true
+    const load = () => {
+      apiFetch('/api/system/history?hours=24')
+        .then(r => r.json())
+        .then(d => { if (active && Array.isArray(d?.samples)) setSeries(d.samples) })
+        .catch(() => {})
+    }
+    load()
+    const id = setInterval(load, 60000)
+    return () => { active = false; clearInterval(id) }
+  }, [])
+
   if (!stats) return null
+
+  const cpuSeries = series.map(s => s.cpu)
+  const memSeries = series.map(s => s.memory_used_percent)
+  const diskSeries = series.map(s => s.disk_used_percent)
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white">System</h3>
-        <Bar
-          label="CPU"
-          value={stats.cpu_usage_percent}
-          total={100}
-          valueLabel={`${stats.cpu_usage_percent}%`}
-          color="emerald"
-        />
-        <Bar
-          label="Memory"
-          value={stats.memory_used_mb}
-          total={stats.memory_total_mb}
-          valueLabel={`${stats.memory_used_mb} MB / ${stats.memory_total_mb} MB`}
-          color="blue"
-        />
-        <Bar
-          label="Storage"
-          value={stats.disk_used_gb}
-          total={stats.disk_total_gb}
-          valueLabel={`${stats.disk_used_gb} GB / ${stats.disk_total_gb} GB`}
-          color="amber"
-        />
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Resource Trends</h3>
+          <span className="text-[10px] text-gray-400">last 24h</span>
+        </div>
+        <MetricChart label="CPU" values={cpuSeries} color="emerald" format={v => `${v}%`} />
+        <MetricChart label="Memory" values={memSeries} color="blue" format={v => `${v}%`} />
+        <MetricChart label="Storage" values={diskSeries} color="amber" format={v => `${v}%`} />
       </div>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4">
