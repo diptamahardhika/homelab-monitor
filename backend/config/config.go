@@ -32,6 +32,12 @@ type Config struct {
 	Servers  []Server  `yaml:"servers"`
 	Services []Service `yaml:"services"`
 	Port     int       `yaml:"port"`
+
+	// Optional history tuning. Zero values fall back to sensible defaults
+	// (60s sampling, 30-day uptime window, 7-day system trend window).
+	HistorySamplingSeconds int `yaml:"history_sampling_seconds"`
+	HistoryRetentionDays   int `yaml:"history_retention_days"`
+	SystemHistoryDays      int `yaml:"system_history_days"`
 }
 
 func Load(path string) (*Config, error) {

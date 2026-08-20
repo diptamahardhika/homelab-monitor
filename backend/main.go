@@ -82,6 +82,7 @@ func main() {
 			r.Put("/dependencies/order", h.ReorderDependencies)
 			r.Delete("/dependencies", h.DeleteDependency)
 			r.Get("/history", h.History)
+			r.Get("/system/history", h.SystemHistory)
 		})
 	})
 

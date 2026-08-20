@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -46,6 +47,7 @@ type Handler struct {
 	depsStore     *dependencies.Store
 	alerts        *monitor.AlertManager
 	history       *monitor.HistoryStore
+	systemHistory *monitor.SystemStore
 	sse           *sseHub
 }
 
@@ -71,7 +73,20 @@ func New(cfg *config.Config, dataPath string) *Handler {
 	h.depsStore = dependencies.New(depsPath, func() { h.cache.Invalidate() })
 
 	h.alerts = monitor.NewAlertManager()
-	h.history = monitor.NewHistoryStore(filepath.Join(dataDir, "uptime.json"), 0) // 0 => default 300 samples
+
+	// History stores persist to the data volume so uptime and resource trends
+	// survive restarts. Sampling is throttled to ~1/min inside the stores; the
+	// live dashboard still refreshes every few seconds.
+	h.history = monitor.NewHistoryStore(
+		filepath.Join(dataDir, "uptime.json"),
+		cfg.HistoryRetentionDays*1440, // 1440 samples/day at 60s
+		time.Duration(cfg.HistorySamplingSeconds)*time.Second,
+	)
+	h.systemHistory = monitor.NewSystemStore(
+		filepath.Join(dataDir, "system.json"),
+		cfg.SystemHistoryDays*1440,
+		time.Duration(cfg.HistorySamplingSeconds)*time.Second,
+	)
 
 	return h
 }
@@ -80,6 +95,7 @@ func New(cfg *config.Config, dataPath string) *Handler {
 func (h *Handler) Start(ctx context.Context) {
 	h.cache.Start(ctx)
 	h.history.Start(ctx)
+	h.systemHistory.Start(ctx)
 }
 
 func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
@@ -140,6 +156,7 @@ func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {
 
 	// Record uptime history and fire alerts on up/down transitions.
 	now := time.Now()
+	h.systemHistory.Record(overview.System, now)
 	targets := make([]monitor.AlertTarget, 0, len(overview.Servers)+len(overview.Services))
 	for i := range overview.Servers {
 		s := &overview.Servers[i]
@@ -790,6 +807,24 @@ func (h *Handler) ImportConfig(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h.history.All())
+}
+
+// SystemHistory returns the rolling host resource series (cpu/mem/disk %).
+// The window is bounded by ?hours= (default 24, capped at 168 = 7 days).
+func (h *Handler) SystemHistory(w http.ResponseWriter, r *http.Request) {
+	hours := 24
+	if q := r.URL.Query().Get("hours"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v > 0 {
+			hours = v
+		}
+	}
+	if hours > 168 {
+		hours = 168
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"samples": h.systemHistory.Recent(hours),
+	})
 }
 
 func (h *Handler) GetDependencies(w http.ResponseWriter, r *http.Request) {

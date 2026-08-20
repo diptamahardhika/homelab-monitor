@@ -1,5 +1,11 @@
 port: 9876
 
+# Optional history tuning (defaults shown). Sampling throttles how often the
+# 3s live poll is written to the uptime/trend stores.
+history_sampling_seconds: 60
+history_retention_days: 30
+system_history_days: 7
+
 servers:
   - name: Localhost
     host: host.docker.internal

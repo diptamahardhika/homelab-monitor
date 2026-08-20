@@ -59,8 +59,9 @@ export function UptimeBadge({ stats }) {
       ? 'text-amber-600 dark:text-amber-400'
       : 'text-rose-600 dark:text-rose-400'
   return (
-    <span className={`text-xs font-medium whitespace-nowrap ${color}`} title={`${stats.up_samples}/${stats.samples} up`}>
+    <span className={`text-xs font-medium whitespace-nowrap ${color}`} title={`30-day uptime · ${stats.up_samples}/${stats.samples} samples up`}>
       {pct.toFixed(1)}%
+      <span className="ml-0.5 text-[10px] text-gray-400 dark:text-gray-500">· 30d</span>
     </span>
   )
 }
@@ -257,13 +258,41 @@ export function UptimeCard({ stats }) {
   )
 }
 
-export function StatCard({ title, value, subtitle, accent, onClick }) {
+export function StatCard({ title, value, subtitle, accent, onClick, children }) {
   return (
     <button onClick={onClick} className="group rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/50 p-5 backdrop-blur-sm transition-all hover:border-gray-300 dark:hover:border-gray-700 hover:shadow-sm text-left w-full min-w-0">
       <p className="text-sm font-medium text-gray-500">{title}</p>
       <p className={`mt-1 text-3xl font-bold ${accent || 'text-gray-900 dark:text-white'} transition-colors`}>{value}</p>
       {subtitle && <p className="mt-1 text-xs text-gray-400">{subtitle}</p>}
+      {children}
     </button>
+  )
+}
+
+// MiniSparkline renders a tiny area-less trend line from numeric values. Used
+// inside stat cards for CPU/RAM/disk history.
+export function MiniSparkline({ values, color = 'emerald', height = 18, width = 90 }) {
+  if (!values || values.length < 2) return null
+  const nums = values.map(v => (typeof v === 'number' ? v : parseFloat(v) || 0))
+  const max = Math.max(...nums)
+  const min = Math.min(...nums)
+  const range = max - min || 1
+  const points = nums.map((v, i) => {
+    const x = (i / (nums.length - 1)) * width
+    const y = height - ((v - min) / range) * (height - 4) - 2
+    return `${x},${y}`
+  }).join(' ')
+  const stroke = {
+    emerald: 'stroke-emerald-500',
+    amber: 'stroke-amber-500',
+    rose: 'stroke-rose-500',
+    blue: 'stroke-blue-500',
+    purple: 'stroke-purple-500',
+  }[color] || 'stroke-emerald-500'
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="none" aria-hidden="true">
+      <polyline fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={stroke} points={points} />
+    </svg>
   )
 }
 
