@@ -8,7 +8,10 @@ import (
 	"time"
 )
 
-const defaultHistorySamples = 1000 // ~50 min at 3s interval
+const (
+	defaultHistorySamples  = 43200 // 30 days at 60s sampling
+	defaultHistoryInterval = time.Minute
+)
 
 // HistorySample is one up/down observation at a point in time.
 type HistorySample struct {
@@ -37,19 +40,24 @@ type HistoryStore struct {
 	data       map[string]*HistoryEntry
 	path       string
 	maxSamples int
+	minInterval time.Duration
 
 	lastSaveMu sync.Mutex
 	lastSave   time.Time
 }
 
-func NewHistoryStore(path string, maxSamples int) *HistoryStore {
+func NewHistoryStore(path string, maxSamples int, minInterval time.Duration) *HistoryStore {
 	if maxSamples <= 0 {
 		maxSamples = defaultHistorySamples
+	}
+	if minInterval <= 0 {
+		minInterval = defaultHistoryInterval
 	}
 	hs := &HistoryStore{
 		data:       map[string]*HistoryEntry{},
 		path:       path,
 		maxSamples: maxSamples,
+		minInterval: minInterval,
 	}
 	hs.load()
 	return hs
@@ -98,13 +106,19 @@ func (hs *HistoryStore) Save() {
 	_ = os.Rename(tmp, hs.path)
 }
 
-// Record adds one observation for the given key.
+// Record adds one observation for the given key. Polling runs every few
+// seconds but storage is throttled to minInterval per key so the rolling
+// window covers a long horizon (e.g. 30 days) without a huge file.
 func (hs *HistoryStore) Record(key string, up bool, ts time.Time) {
 	hs.mu.Lock()
 	e, ok := hs.data[key]
 	if !ok {
 		e = &HistoryEntry{}
 		hs.data[key] = e
+	}
+	if n := len(e.Samples); n > 0 && ts.Unix()-e.Samples[n-1].Ts < int64(hs.minInterval.Seconds()) {
+		hs.mu.Unlock()
+		return
 	}
 	e.Samples = append(e.Samples, HistorySample{Ts: ts.Unix(), Up: up})
 	if len(e.Samples) > hs.maxSamples {
