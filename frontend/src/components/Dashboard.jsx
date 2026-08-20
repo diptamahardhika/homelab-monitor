@@ -1043,6 +1043,13 @@ function ServerModal({ initial, onClose, onAdded, onError }) {
   )
 }
 
+const LIVE_INDICATOR = {
+  loading: { dot: 'bg-gray-400', text: 'text-gray-400', label: 'Connecting…', pulse: false, title: 'Connecting to the live update stream' },
+  live:    { dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', label: 'Live', pulse: false, title: 'Receiving live updates' },
+  polling: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400', label: 'Reconnecting…', pulse: true, title: 'Live stream lost — falling back to polling' },
+  stale:   { dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400', label: 'Stale', pulse: true, title: 'No fresh data — check the backend' },
+}
+
 export default function Dashboard() {
   const [servers, setServers] = useState([])
   const [services, setServices] = useState([])
@@ -1063,6 +1070,7 @@ export default function Dashboard() {
   const [commitTime, setCommitTime] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [liveStatus, setLiveStatus] = useState('loading')
   const [now, setNow] = useState(Date.now())
   const [servicesSearch, setServicesSearch] = useState('')
   const [containersSearch, setContainersSearch] = useState('')
@@ -1185,6 +1193,7 @@ export default function Dashboard() {
     const startPolling = () => {
       if (!polling) {
         polling = true
+        setLiveStatus('polling')
         interval = setInterval(fetchAll, 3000)
       }
     }
@@ -1200,15 +1209,21 @@ export default function Dashboard() {
     // fall back to polling so the dashboard stays live (and 401s surface to the
     // token gate via apiFetch).
     const connectSSE = () => {
+      setLiveStatus('loading')
       es = new EventSource('/api/events')
-      es.onopen = () => stopPolling()
+      es.onopen = () => {
+        setLiveStatus('live')
+        stopPolling()
+      }
       es.onmessage = (ev) => {
+        setLiveStatus('live')
         try {
           const data = JSON.parse(ev.data)
           applyData(data.overview, data.history)
         } catch (_) {}
       }
       es.onerror = () => {
+        setLiveStatus('polling')
         if (!document.hidden) startPolling()
       }
     }
@@ -1242,6 +1257,14 @@ export default function Dashboard() {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [])
+
+  // If data stops refreshing for more than a few cycles (even with the SSE
+  // connection nominally open), the dashboard is effectively stale.
+  useEffect(() => {
+    if (lastUpdated && now - lastUpdated > 15000) {
+      setLiveStatus('stale')
+    }
+  }, [now, lastUpdated])
 
   const openServer = (s) => setPanel({ type: 'server', item: s })
   const openService = (s) => setPanel({ type: 'service', item: s })
@@ -1459,11 +1482,15 @@ const manualRefresh = async () => {
         </div>
         <div className="flex items-center gap-3">
           <div
-            className="hidden sm:flex items-center gap-1.5 text-xs text-gray-400"
-            title={lastUpdated ? `Last updated at ${new Date(lastUpdated).toLocaleTimeString()}` : 'Waiting for first update'}
+            className="hidden sm:flex items-center gap-2 text-xs"
+            title={liveStatus === 'loading' ? LIVE_INDICATOR.loading.title : LIVE_INDICATOR[liveStatus].title}
+            aria-live="polite"
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${lastUpdated && now - lastUpdated < 10000 ? 'bg-emerald-500' : 'bg-gray-400'}`} />
-            <span>{lastUpdated ? `Updated ${formatRelative(lastUpdated, now)}` : 'Waiting for first update'}</span>
+            <span className={`flex items-center gap-1.5 font-medium ${LIVE_INDICATOR[liveStatus].text}`}>
+              <span className={`h-2 w-2 rounded-full ${LIVE_INDICATOR[liveStatus].dot} ${LIVE_INDICATOR[liveStatus].pulse ? 'animate-pulse' : ''}`} />
+              {LIVE_INDICATOR[liveStatus].label}
+            </span>
+            <span className="text-gray-400">{lastUpdated ? `Updated ${formatRelative(lastUpdated, now)}` : 'Waiting for first update'}</span>
           </div>
           <button
             onClick={toggleTheme}
