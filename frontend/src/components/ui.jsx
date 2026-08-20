@@ -1,5 +1,21 @@
 import { useState, useRef } from 'react'
 
+const SPARKLINE_STROKES = {
+  emerald: 'stroke-emerald-500',
+  amber: 'stroke-amber-500',
+  rose: 'stroke-rose-500',
+  blue: 'stroke-blue-500',
+  purple: 'stroke-purple-500',
+}
+
+const SPARKLINE_FILLS = {
+  emerald: 'rgb(52,211,153)',
+  amber: 'rgb(251,191,36)',
+  rose: 'rgb(248,113,113)',
+  blue: 'rgb(59,130,246)',
+  purple: 'rgb(168,85,247)',
+}
+
 export function SunIcon() {
   return (
     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -269,9 +285,8 @@ export function StatCard({ title, value, subtitle, accent, onClick, children }) 
   )
 }
 
-// MiniSparkline renders a tiny area-less trend line from numeric values. Used
-// inside stat cards for CPU/RAM/disk history.
-export function MiniSparkline({ values, color = 'emerald', height = 18, width = 90 }) {
+// SparklineChart renders a single trend line with a soft area fill.
+export function SparklineChart({ values, color = 'emerald', height = 48, width = 200 }) {
   if (!values || values.length < 2) return null
   const nums = values.map(v => (typeof v === 'number' ? v : parseFloat(v) || 0))
   const max = Math.max(...nums)
@@ -279,19 +294,20 @@ export function MiniSparkline({ values, color = 'emerald', height = 18, width = 
   const range = max - min || 1
   const points = nums.map((v, i) => {
     const x = (i / (nums.length - 1)) * width
-    const y = height - ((v - min) / range) * (height - 4) - 2
+    const y = height - ((v - min) / range) * (height - 8) - 4
     return `${x},${y}`
   }).join(' ')
-  const stroke = {
-    emerald: 'stroke-emerald-500',
-    amber: 'stroke-amber-500',
-    rose: 'stroke-rose-500',
-    blue: 'stroke-blue-500',
-    purple: 'stroke-purple-500',
-  }[color] || 'stroke-emerald-500'
+  const gradId = `spark-${color}-${height}-${nums.length}`
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto" preserveAspectRatio="none" aria-hidden="true">
-      <polyline fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={stroke} points={points} />
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={SPARKLINE_FILLS[color] || 'rgb(52,211,153)'} stopOpacity="0.3" />
+          <stop offset="100%" stopColor={SPARKLINE_FILLS[color] || 'rgb(52,211,153)'} stopOpacity="0.01" />
+        </linearGradient>
+      </defs>
+      <polygon fill={`url(#${gradId})`} points={`0,${height} ${points} ${width},${height}`} />
+      <polyline fill="none" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className={SPARKLINE_STROKES[color] || 'stroke-emerald-500'} points={points} />
     </svg>
   )
 }
