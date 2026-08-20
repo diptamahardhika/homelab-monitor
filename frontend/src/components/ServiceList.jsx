@@ -46,7 +46,7 @@ export default function ServiceList({ services, latencyHistory, historyStats, on
           <table className="w-full min-w-[640px]">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <SortHeader label="Service" sortKey="name" sort={sort} onSort={k => toggleSort(setSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
+                <SortHeader label="Service" sortKey="name" sort={sort} onSort={k => toggleSort(setSort, k)} className="py-3 pl-5 pr-2 w-1/2" />
                 <SortHeader label="Status" sortKey="status" sort={sort} onSort={k => toggleSort(setSort, k)} />
                 <th className="py-3 px-2">Code</th>
                 <SortHeader label="Latency" sortKey="latency" sort={sort} onSort={k => toggleSort(setSort, k)} />
@@ -57,7 +57,7 @@ export default function ServiceList({ services, latencyHistory, historyStats, on
             <tbody>
               {visible.map((s, i) => (
                 <tr key={i} className="border-b border-gray-50 dark:border-gray-800/50 last:border-0">
-                  <td className="py-0 pl-4 pr-2">
+                  <td className="py-0 pl-5 pr-2">
                     <button onClick={() => onOpen(s)} className="group flex items-center w-full py-3 text-left">
                       <span className={`w-1.5 h-1.5 rounded-full mr-3 shrink-0 ${s.status === 'up' ? 'bg-emerald-500 dark:bg-emerald-400' : s.status === 'down' ? 'bg-red-500 dark:bg-red-400' : 'bg-amber-500 dark:bg-amber-400'}`}
                         style={{ boxShadow: s.status === 'up' ? '0 0 6px rgba(52,211,153,0.6)' : s.status === 'down' ? '0 0 6px rgba(248,113,113,0.6)' : '0 0 6px rgba(251,191,36,0.6)' }}
