@@ -29,4 +29,9 @@ COPY --from=frontend /build/dist ./static
 COPY config.yaml /app/config.yaml
 
 EXPOSE 9876
+
+# /api/health stays unauthenticated (see main.go) so it works for healthchecks.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:9876/api/health || exit 1
+
 CMD ["./homelab-monitor"]
