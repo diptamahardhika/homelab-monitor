@@ -9,6 +9,7 @@ import ContainerGrid from './ContainerGrid'
 import DetailPanel from './DetailPanel'
 import { AddServiceModal, ServerModal } from './Modals'
 import Toast from './Toast'
+import { formatRelative } from './ui'
 
 export default function Dashboard() {
   const [servers, setServers] = useState([])
@@ -439,6 +440,15 @@ export default function Dashboard() {
       />
 
       <Toast toast={toast} />
+
+      <footer className="mt-12 pt-6 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between gap-2 flex-wrap text-xs text-gray-400">
+        <span>HomeLab Monitor</span>
+        <a href="https://github.com/diptamahardhika/homelab-monitor" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 dark:hover:text-gray-300">
+          {commit ? (
+            <span className="font-mono">{commit}{commitTime && ` · ${formatRelative(new Date(commitTime).getTime(), now)}`}</span>
+          ) : version && <span className="font-mono">v{version}</span>}
+        </a>
+      </footer>
     </div>
   )
 }
