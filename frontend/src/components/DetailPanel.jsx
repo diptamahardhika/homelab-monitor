@@ -2,16 +2,20 @@ import { useState, useEffect } from 'react'
 import { apiFetch } from '../api'
 import { Dot, StatusBadge, UptimeCard, LatencySparkline, CopyButton, DetailRow, Bar, formatSpeed, formatBytes, formatTime, SparklineChart } from './ui'
 
-function MetricChart({ label, values, color, format }) {
-  const last = values.length ? values[values.length - 1] : null
+function MetricChart({ label, values, color, live, format, usage }) {
+  const series = live != null && values.length ? [...values, live] : values
+  const readout = live != null ? format(live) : (values.length ? format(values[values.length - 1]) : '—')
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{label}</span>
-        <span className="text-sm font-mono text-gray-500">{last != null ? format(last) : '—'}</span>
+        <span className="text-sm font-mono text-gray-500">
+          {readout}
+          {usage && <span className="ml-1.5 text-xs text-gray-400">{usage}</span>}
+        </span>
       </div>
-      {values.length >= 2 ? (
-        <SparklineChart values={values} color={color} height={48} width={200} />
+      {series.length >= 2 ? (
+        <SparklineChart values={series} color={color} height={48} width={200} />
       ) : (
         <p className="text-xs text-gray-400">Collecting data…</p>
       )}
@@ -40,17 +44,39 @@ function SystemDetail({ stats }) {
   const cpuSeries = series.map(s => s.cpu)
   const memSeries = series.map(s => s.memory_used_percent)
   const diskSeries = series.map(s => s.disk_used_percent)
+  const gb = (mb) => (mb / 1024).toFixed(1)
 
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Resource Trends</h3>
-          <span className="text-[10px] text-gray-400">last 24h</span>
+          <span className="text-[10px] text-gray-400">last 24h · live</span>
         </div>
-        <MetricChart label="CPU" values={cpuSeries} color="emerald" format={v => `${v}%`} />
-        <MetricChart label="Memory" values={memSeries} color="blue" format={v => `${v}%`} />
-        <MetricChart label="Storage" values={diskSeries} color="amber" format={v => `${v}%`} />
+        <MetricChart
+          label="CPU"
+          values={cpuSeries}
+          color="emerald"
+          live={stats.cpu_usage_percent}
+          format={v => `${v}%`}
+          usage={`${stats.cpu_count} cores`}
+        />
+        <MetricChart
+          label="Memory"
+          values={memSeries}
+          color="blue"
+          live={stats.memory_used_percent}
+          format={v => `${v}%`}
+          usage={`${gb(stats.memory_used_mb)} / ${gb(stats.memory_total_mb)} GB`}
+        />
+        <MetricChart
+          label="Storage"
+          values={diskSeries}
+          color="amber"
+          live={stats.disk_used_percent}
+          format={v => `${v}%`}
+          usage={`${stats.disk_used_gb} / ${stats.disk_total_gb} GB`}
+        />
       </div>
 
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4">
