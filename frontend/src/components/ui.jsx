@@ -495,7 +495,7 @@ export const containerRank = (state) => {
   return ranks[state] ?? 6
 }
 
-export function filterAndSort(items, search, sort, nameFn, rankFn, latencyFn, stateFn, statusTextFn, pinFirst) {
+export function filterAndSort(items, search, sort, nameFn, rankFn, latencyFn, stateFn, statusTextFn, pinFirst, numFn) {
   const q = search.trim().toLowerCase()
   const filtered = q ? items.filter(it => (nameFn(it) || '').toLowerCase().includes(q)) : items
   const sorted = [...filtered]
@@ -516,6 +516,16 @@ export function filterAndSort(items, search, sort, nameFn, rankFn, latencyFn, st
     sorted.sort((a, b) => String(statusTextFn(a) || '').localeCompare(String(statusTextFn(b) || '')) * dir)
   } else if (sort.key === 'latency') {
     sorted.sort((a, b) => cmp(latencyFn(a) || Infinity, latencyFn(b) || Infinity) * dir || String(nameFn(a)).localeCompare(String(nameFn(b))))
+  } else if (sort.key === 'cpu' || sort.key === 'mem') {
+    const num = numFn || (() => null)
+    sorted.sort((a, b) => {
+      const av = num(a)
+      const bv = num(b)
+      const aHas = av != null
+      const bHas = bv != null
+      if (aHas !== bHas) return aHas ? -1 : 1
+      return cmp(aHas ? av : -1, bHas ? bv : -1) * dir || String(nameFn(a)).localeCompare(String(nameFn(b)))
+    })
   } else {
     sorted.sort((a, b) => String(nameFn(a)).localeCompare(String(nameFn(b))) * dir)
   }

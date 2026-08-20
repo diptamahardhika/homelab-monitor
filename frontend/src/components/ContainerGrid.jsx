@@ -20,7 +20,16 @@ export default function ContainerGrid({ containers, onOpen }) {
   const [sort, setSort] = useState({ key: 'status', dir: 'asc' })
 
   const filtered = filter === 'all' ? containers : containers.filter(c => c.state === filter)
-  const visible = filterAndSort(filtered, search, sort, c => c.name || c.id, containerRank, c => null, c => c.state, c => c.status, true)
+  const visible = filterAndSort(
+    filtered, search, sort,
+    c => c.name || c.id,
+    containerRank,
+    c => null,
+    c => c.state,
+    c => c.status,
+    true,
+    c => c.stats ? (sort.key === 'cpu' ? c.stats.cpu_percent : c.stats.memory_percent) : null,
+  )
 
   return (
     <section id="containers-section" className="mb-8">
@@ -56,8 +65,8 @@ export default function ContainerGrid({ containers, onOpen }) {
               <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <SortHeader label="Container" sortKey="name" sort={sort} onSort={k => toggleSort(setSort, k)} className="py-3 pl-4 pr-2 w-1/2" />
                 <SortHeader label="State" sortKey="status" sort={sort} onSort={k => toggleSort(setSort, k)} />
-                <th className="py-3 pl-2 pr-2">CPU</th>
-                <th className="py-3 pl-2 pr-2">Mem</th>
+                <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={k => toggleSort(setSort, k)} className="pl-2" />
+                <SortHeader label="Mem" sortKey="mem" sort={sort} onSort={k => toggleSort(setSort, k)} className="pl-2" />
                 <SortHeader label="Status" sortKey="statustext" sort={sort} onSort={k => toggleSort(setSort, k)} />
                 <th className="py-3 pl-2 pr-4">Ports</th>
               </tr>
