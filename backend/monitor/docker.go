@@ -150,24 +150,12 @@ func GetDockerContainers(ctx context.Context) ([]DockerContainer, error) {
 		})
 	}
 
-	// Attach live CPU/memory stats for running containers. Each stats call
-	// streams two frames (~1s) for an accurate CPU delta, so run them in
-	// parallel with bounded concurrency.
-	running := make([]int, 0, len(result))
-	for i, c := range result {
-		if c.State == "running" {
-			running = append(running, i)
+	// Attach the latest CPU/memory stats collected by the background stats
+	// collector so this call never waits on the ~1s two-frame stats stream.
+	for i := range result {
+		if result[i].State == "running" {
+			result[i].Stats = cachedContainerStats(result[i].ID)
 		}
-	}
-	if len(running) > 0 {
-		statsCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		defer cancel()
-		_ = RunBounded(statsCtx, running, 4, func(ctx context.Context, i int) error {
-			if st := GetContainerStats(ctx, result[i].ID); st != nil {
-				result[i].Stats = st
-			}
-			return nil
-		})
 	}
 
 	return result, nil
