@@ -286,17 +286,27 @@ export function StatCard({ title, value, subtitle, accent, onClick, children }) 
 }
 
 // SparklineChart renders a single trend line with a soft area fill.
-export function SparklineChart({ values, color = 'emerald', height = 48, width = 200, domain }) {
+// Pass `times` (ms, same length as values) to space points proportionally to
+// their timestamp so mixed-cadence data keeps its true shape; otherwise
+// points are spaced uniformly by index.
+export function SparklineChart({ values, times, color = 'emerald', height = 48, width = 200, domain }) {
   if (!values || values.length < 2) return null
   const nums = values.map(v => (typeof v === 'number' ? v : parseFloat(v) || 0))
   const lo = domain ? domain[0] : Math.min(...nums)
   const hi = domain ? domain[1] : Math.max(...nums)
   const range = hi - lo || 1
   const clamp = v => Math.min(hi, Math.max(lo, v))
+  let xs
+  if (Array.isArray(times) && times.length === nums.length && times[nums.length - 1] > times[0]) {
+    const t0 = times[0]
+    const span = times[nums.length - 1] - t0
+    xs = times.map(t => ((t - t0) / span) * width)
+  } else {
+    xs = nums.map((_, i) => (i / (nums.length - 1)) * width)
+  }
   const points = nums.map((v, i) => {
-    const x = (i / (nums.length - 1)) * width
     const y = height - ((clamp(v) - lo) / range) * (height - 8) - 4
-    return `${x},${y}`
+    return `${xs[i]},${y}`
   }).join(' ')
   const gradId = `spark-${color}-${height}-${nums.length}`
   return (

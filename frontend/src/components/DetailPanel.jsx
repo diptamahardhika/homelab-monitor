@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { apiFetch } from '../api'
 import { Dot, StatusBadge, UptimeCard, LatencySparkline, CopyButton, DetailRow, Bar, formatSpeed, formatBytes, formatTime, SparklineChart } from './ui'
 
-function MetricChart({ label, values, color, live, format, usage, domain }) {
-  const series = live != null && values.length ? [...values, live] : values
+function MetricChart({ label, values, times, color, live, format, usage, domain }) {
+  let series = values
+  let xs = times
+  if (live != null && values.length) {
+    series = [...values, live]
+    xs = times ? [...times, Date.now()] : undefined
+  }
   const readout = live != null ? format(live) : (values.length ? format(values[values.length - 1]) : '—')
   return (
     <div>
@@ -15,7 +20,7 @@ function MetricChart({ label, values, color, live, format, usage, domain }) {
         </span>
       </div>
       {series.length >= 2 ? (
-        <SparklineChart values={series} color={color} height={48} width={200} domain={domain} />
+        <SparklineChart values={series} times={xs} color={color} height={48} width={200} domain={domain} />
       ) : (
         <p className="text-xs text-gray-400">Collecting data…</p>
       )}
@@ -23,14 +28,29 @@ function MetricChart({ label, values, color, live, format, usage, domain }) {
   )
 }
 
+const TREND_RANGES = [
+  { value: 'live', label: 'Live', hours: 5 / 60 },
+  { value: 1, label: '1h', hours: 1 },
+  { value: 6, label: '6h', hours: 6 },
+  { value: 12, label: '12h', hours: 12 },
+  { value: 24, label: '24h', hours: 24 },
+]
+
 function SystemDetail({ stats }) {
   const [series, setSeries] = useState([])
+  // Live snapshots pushed over SSE, kept separately from the stored history
+  // (which the backend samples only once per minute) so the trend lines move
+  // in real time between stored points.
+  const liveBufRef = useRef([])
   const [range, setRange] = useState(() => {
     try {
-      const saved = Number(localStorage.getItem('system-trend-range'))
-      return [1, 6, 12, 24].includes(saved) ? saved : 24
+      const saved = localStorage.getItem('system-trend-range')
+      if (saved === 'live') return 'live'
+      const n = Number(saved)
+      return [1, 6, 12, 24].includes(n) ? n : 24
     } catch { return 24 }
   })
+  const rangeHours = TREND_RANGES.find(r => r.value === range)?.hours ?? 24
 
   const changeRange = (h) => {
     setRange(h)
@@ -40,9 +60,16 @@ function SystemDetail({ stats }) {
   useEffect(() => {
     let active = true
     const load = () => {
-      apiFetch(`/api/system/history?hours=${range}`)
+      apiFetch(`/api/system/history?hours=${range === 'live' ? 1 : range}`)
         .then(r => r.json())
-        .then(d => { if (active && Array.isArray(d?.samples)) setSeries(d.samples) })
+        .then(d => {
+          if (!active || !Array.isArray(d?.samples)) return
+          setSeries(d.samples)
+          // Drop buffered live points the fetch already covers (sample ts is
+          // epoch seconds; buffer ts is milliseconds).
+          const lastTs = d.samples.length ? d.samples[d.samples.length - 1].ts * 1000 : 0
+          liveBufRef.current = liveBufRef.current.filter(p => p.ts > lastTs + 1000)
+        })
         .catch(() => {})
     }
     load()
@@ -50,11 +77,33 @@ function SystemDetail({ stats }) {
     return () => { active = false; clearInterval(id) }
   }, [range])
 
+  useEffect(() => {
+    if (!stats) return
+    const buf = liveBufRef.current
+    buf.push({
+      ts: Date.now(),
+      cpu: stats.cpu_usage_percent,
+      mem: stats.memory_used_percent,
+      disk: stats.disk_used_percent,
+    })
+    if (buf.length > 320) buf.shift()
+  }, [stats])
+
   if (!stats) return null
 
-  const cpuSeries = series.map(s => s.cpu)
-  const memSeries = series.map(s => s.memory_used_percent)
-  const diskSeries = series.map(s => s.disk_used_percent)
+  // Merge stored samples (epoch seconds) with the live buffer and keep only
+  // what fits the selected window so the chart slides left as time advances.
+  const merged = [
+    ...series.map(s => ({ ts: s.ts * 1000, cpu: s.cpu, mem: s.memory_used_percent, disk: s.disk_used_percent })),
+    ...liveBufRef.current,
+  ]
+  const windowMs = rangeHours * 3600 * 1000
+  const newestTs = merged.length ? merged[merged.length - 1].ts : 0
+  const pts = newestTs ? merged.filter(p => p.ts >= newestTs - windowMs) : []
+  const cpuSeries = pts.map(p => p.cpu)
+  const memSeries = pts.map(p => p.mem)
+  const diskSeries = pts.map(p => p.disk)
+  const tsSeries = pts.map(p => p.ts)
   const gb = (mb) => (mb / 1024).toFixed(1)
 
   return (
@@ -65,13 +114,16 @@ function SystemDetail({ stats }) {
           <div className="flex items-center gap-1.5">
             <select
               value={range}
-              onChange={e => changeRange(Number(e.target.value))}
+              onChange={e => {
+                const v = e.target.value
+                changeRange(v === 'live' ? 'live' : Number(v))
+              }}
               className="text-[10px] text-gray-400 bg-transparent border-0 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none appearance-none"
               aria-label="Trend time range"
             >
-              {[1, 6, 12, 24].map(h => (
-                <option key={h} value={h} className="text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">
-                  {h === 1 ? '1h' : `${h}h`}
+              {TREND_RANGES.map(r => (
+                <option key={r.value} value={r.value} className="text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">
+                  {r.label}
                 </option>
               ))}
             </select>
@@ -81,6 +133,7 @@ function SystemDetail({ stats }) {
         <MetricChart
           label="CPU"
           values={cpuSeries}
+          times={tsSeries}
           color="emerald"
           live={stats.cpu_usage_percent}
           format={v => `${v}%`}
@@ -90,6 +143,7 @@ function SystemDetail({ stats }) {
         <MetricChart
           label="Memory"
           values={memSeries}
+          times={tsSeries}
           color="blue"
           live={stats.memory_used_percent}
           format={v => `${v}%`}
@@ -99,6 +153,7 @@ function SystemDetail({ stats }) {
         <MetricChart
           label="Storage"
           values={diskSeries}
+          times={tsSeries}
           color="amber"
           live={stats.disk_used_percent}
           format={v => `${v}%`}
