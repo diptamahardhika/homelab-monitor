@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import DependencyGraph from './DependencyGraph'
-import { apiFetch, clearToken } from '../api'
+import { apiFetch, clearToken, errorMessage } from '../api'
 import Header from './Header'
 import StatCards from './StatCards'
 import ServerList from './ServerList'
@@ -10,64 +10,40 @@ import DetailPanel from './DetailPanel'
 import { AddServiceModal, ServerModal } from './Modals'
 import Toast from './Toast'
 import { formatRelative } from './ui'
+import { useToast } from '../hooks/useToast'
+import { useTheme } from '../hooks/useTheme'
+import { useVersion } from '../hooks/useVersion'
+import { useClock } from '../hooks/useClock'
+import { useOverview } from '../hooks/useOverview'
 
 export default function Dashboard() {
-  const [servers, setServers] = useState([])
-  const [services, setServices] = useState([])
-  const [containers, setContainers] = useState([])
-  const [systemStats, setSystemStats] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
   const [panel, setPanel] = useState(null)
-  const [dark, setDark] = useState(true)
   const [showAddService, setShowAddService] = useState(false)
   const [editingService, setEditingService] = useState(null)
   const [showAddServer, setShowAddServer] = useState(false)
   const [editingServer, setEditingServer] = useState(null)
-  const [version, setVersion] = useState(null)
-  const [commit, setCommit] = useState(null)
-  const [commitTime, setCommitTime] = useState(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const [liveStatus, setLiveStatus] = useState('loading')
-  const [now, setNow] = useState(Date.now())
-  const [toast, setToast] = useState(null)
-  const toastTimer = useRef(null)
-  const latencyHistoryRef = useRef({})
-  const historyStatsRef = useRef({})
 
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type })
-    if (toastTimer.current) clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(null), 3500)
-  }
-
-  const toggleTheme = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
-  }
+  const [dark, toggleTheme] = useTheme()
+  const { toast, showToast } = useToast()
+  const { version, commit, commitTime } = useVersion()
+  const now = useClock(1000)
+  const {
+    servers,
+    services,
+    containers,
+    systemStats,
+    loading,
+    error,
+    liveStatus,
+    lastUpdated,
+    refreshing,
+    latencyHistoryRef,
+    historyStatsRef,
+    fetchAll,
+    manualRefresh,
+  } = useOverview(now)
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme')
-    const prefersDark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
-    setDark(prefersDark)
-    document.documentElement.classList.toggle('dark', prefersDark)
-  }, [])
-
-  useEffect(() => {
-    apiFetch('/api/version')
-      .then(r => r.json())
-      .then(d => {
-        if (d && d.version) setVersion(d.version)
-        if (d && d.commit) setCommit(d.commit)
-        if (d && d.commit_time) setCommitTime(d.commit_time)
-      })
-      .catch(() => {})
-  }, [])
-
-  const statusIndicator = useCallback(() => {
     const downServers = servers.filter(s => !s.alive).length
     const downServices = services.filter(s => s.status === 'down').length
     const degradedServices = services.filter(s => s.status === 'degraded').length
@@ -91,131 +67,6 @@ export default function Dashboard() {
     }
   }, [servers, services])
 
-  useEffect(() => {
-    statusIndicator()
-  }, [statusIndicator])
-
-  const applyData = useCallback((overview, hist) => {
-    const serversData = Array.isArray(overview.servers) ? overview.servers : []
-    const servicesData = Array.isArray(overview.services) ? overview.services : []
-    setServers(serversData)
-    setServices(servicesData)
-    setContainers(Array.isArray(overview.containers) ? overview.containers : [])
-    setSystemStats(overview.system)
-    historyStatsRef.current = hist && typeof hist === 'object' ? hist : {}
-
-    const newHistory = { ...latencyHistoryRef.current }
-    for (const item of [...serversData, ...servicesData]) {
-      if (!newHistory[item.name]) newHistory[item.name] = []
-      const val = parseInt(item.latency, 10)
-      if (!isNaN(val)) {
-        newHistory[item.name].push(val)
-      }
-      if (newHistory[item.name].length > 30) {
-        newHistory[item.name].shift()
-      }
-    }
-    latencyHistoryRef.current = newHistory
-
-    setError(null)
-    setLastUpdated(Date.now())
-  }, [])
-
-  const fetchAll = useCallback(async () => {
-    try {
-      const [overview, hist] = await Promise.all([
-        apiFetch('/api/overview').then(r => r.json()),
-        apiFetch('/api/history').then(r => r.json()).catch(() => ({})),
-      ])
-      applyData(overview, hist)
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [applyData])
-
-  useEffect(() => {
-    let es = null
-    let interval = null
-    let polling = false
-
-    const startPolling = () => {
-      if (!polling) {
-        polling = true
-        setLiveStatus('polling')
-        interval = setInterval(fetchAll, 3000)
-      }
-    }
-    const stopPolling = () => {
-      if (interval) {
-        clearInterval(interval)
-        interval = null
-      }
-      polling = false
-    }
-
-    // SSE pushes every refresh; on failure EventSource auto-reconnects while we
-    // fall back to polling so the dashboard stays live (and 401s surface to the
-    // token gate via apiFetch).
-    const connectSSE = () => {
-      setLiveStatus('loading')
-      es = new EventSource('/api/events')
-      es.onopen = () => {
-        setLiveStatus('live')
-        stopPolling()
-      }
-      es.onmessage = (ev) => {
-        setLiveStatus('live')
-        try {
-          const data = JSON.parse(ev.data)
-          applyData(data.overview, data.history)
-        } catch (_) {}
-      }
-      es.onerror = () => {
-        setLiveStatus('polling')
-        if (!document.hidden) startPolling()
-      }
-    }
-    const closeSSE = () => {
-      if (es) {
-        es.close()
-        es = null
-      }
-    }
-
-    const onVisibility = () => {
-      if (document.hidden) {
-        closeSSE()
-        stopPolling()
-      } else {
-        fetchAll().then(connectSSE)
-      }
-    }
-
-    fetchAll().then(connectSSE)
-    document.addEventListener('visibilitychange', onVisibility)
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
-      closeSSE()
-      stopPolling()
-    }
-  }, [fetchAll, applyData])
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
-
-  // If data stops refreshing for more than a few cycles (even with the SSE
-  // connection nominally open), the dashboard is effectively stale.
-  useEffect(() => {
-    if (lastUpdated && now - lastUpdated > 15000) {
-      setLiveStatus('stale')
-    }
-  }, [now, lastUpdated])
-
   const openServer = (s) => setPanel({ type: 'server', item: s })
   const openService = (s) => setPanel({ type: 'service', item: s })
   const openContainer = (c) => setPanel({ type: 'container', item: c })
@@ -224,14 +75,7 @@ export default function Dashboard() {
   const confirmDelete = async (name) => {
     try {
       const res = await apiFetch(`/api/services/${encodeURIComponent(name)}`, { method: 'DELETE' })
-      if (!res.ok) {
-        let msg = `Failed to delete (${res.status})`
-        try {
-          const data = await res.json()
-          msg = data.error || msg
-        } catch (_) {}
-        throw new Error(msg)
-      }
+      if (!res.ok) throw new Error(await errorMessage(res))
       showToast(`Deleted "${name}"`)
       fetchAll()
     } catch (e) {
@@ -242,14 +86,7 @@ export default function Dashboard() {
   const confirmServerDelete = async (name) => {
     try {
       const res = await apiFetch(`/api/servers/${encodeURIComponent(name)}`, { method: 'DELETE' })
-      if (!res.ok) {
-        let msg = `Failed to delete (${res.status})`
-        try {
-          const data = await res.json()
-          msg = data.error || msg
-        } catch (_) {}
-        throw new Error(msg)
-      }
+      if (!res.ok) throw new Error(await errorMessage(res))
       showToast(`Deleted "${name}"`)
       fetchAll()
     } catch (e) {
@@ -268,27 +105,10 @@ export default function Dashboard() {
     setEditingService({ name: s.name, url: s.url, type: s.type })
   }
 
-  const manualRefresh = async () => {
-    setRefreshing(true)
-    try {
-      await fetchAll()
-    } finally {
-      setRefreshing(false)
-      setLastUpdated(Date.now())
-    }
-  }
-
   const exportConfig = async () => {
     try {
       const res = await apiFetch('/api/export')
-      if (!res.ok) {
-        let msg = `Failed to export (${res.status})`
-        try {
-          const data = await res.json()
-          msg = data.error || msg
-        } catch (_) {}
-        throw new Error(msg)
-      }
+      if (!res.ok) throw new Error(await errorMessage(res))
       const data = await res.json()
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
