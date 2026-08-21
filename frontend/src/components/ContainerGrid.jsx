@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FilterChips, SearchInput, SortHeader, StatusBadge, PortLinks, EmptyState, filterAndSort, toggleSort, containerRank } from './ui'
+import { FilterChips, SearchInput, SortHeader, StatusBadge, PortLinks, EmptyState, filterAndSort, toggleSort, containerRank, usePersistedSort } from './ui'
 
 function MiniUsage({ pct, fill }) {
   const clamped = Math.max(0, Math.min(100, pct))
@@ -17,7 +17,7 @@ function MiniUsage({ pct, fill }) {
 export default function ContainerGrid({ containers, onOpen }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
-  const [sort, setSort] = useState({ key: 'status', dir: 'asc' })
+  const [sort, setSort] = usePersistedSort('containers-sort', { key: 'status', dir: 'asc' })
 
   const filtered = filter === 'all' ? containers : containers.filter(c => c.state === filter)
   const visible = filterAndSort(

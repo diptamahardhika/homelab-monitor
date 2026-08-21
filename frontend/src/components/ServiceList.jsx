@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { FilterChips, SearchInput, SortHeader, StatusBadge, Trend, UptimeBadge, EmptyState, filterAndSort, toggleSort, statusRank } from './ui'
+import { FilterChips, SearchInput, SortHeader, StatusBadge, Trend, UptimeBadge, EmptyState, filterAndSort, toggleSort, statusRank, usePersistedSort } from './ui'
 
 export default function ServiceList({ services, latencyHistory, historyStats, onOpen, onDelete, onAdd }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
-  const [sort, setSort] = useState({ key: 'name', dir: 'asc' })
+  const [sort, setSort] = usePersistedSort('services-sort', { key: 'name', dir: 'asc' })
   const [confirmingDelete, setConfirmingDelete] = useState(null)
 
   const filtered = filter === 'all' ? services : services.filter(s => s.status === filter)
