@@ -537,3 +537,22 @@ export function toggleSort(setter, key) {
     ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
     : { key, dir: 'asc' })
 }
+
+// usePersistedSort keeps a table's sort state across unmounts and reloads.
+export function usePersistedSort(storageKey, initial) {
+  const [sort, setSort] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey))
+      if (saved && typeof saved.key === 'string' && (saved.dir === 'asc' || saved.dir === 'desc')) return saved
+    } catch {}
+    return initial
+  })
+  const setPersisted = value => {
+    setSort(prev => {
+      const next = typeof value === 'function' ? value(prev) : value
+      try { localStorage.setItem(storageKey, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
+  return [sort, setPersisted]
+}

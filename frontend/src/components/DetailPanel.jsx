@@ -25,7 +25,17 @@ function MetricChart({ label, values, color, live, format, usage, domain }) {
 
 function SystemDetail({ stats }) {
   const [series, setSeries] = useState([])
-  const [range, setRange] = useState(24)
+  const [range, setRange] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('system-trend-range'))
+      return [1, 6, 12, 24].includes(saved) ? saved : 24
+    } catch { return 24 }
+  })
+
+  const changeRange = (h) => {
+    setRange(h)
+    try { localStorage.setItem('system-trend-range', String(h)) } catch {}
+  }
 
   useEffect(() => {
     let active = true
@@ -55,7 +65,7 @@ function SystemDetail({ stats }) {
           <div className="flex items-center gap-1.5">
             <select
               value={range}
-              onChange={e => setRange(Number(e.target.value))}
+              onChange={e => changeRange(Number(e.target.value))}
               className="text-[10px] text-gray-400 bg-transparent border-0 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none appearance-none"
               aria-label="Trend time range"
             >
