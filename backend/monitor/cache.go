@@ -62,10 +62,13 @@ func (c *SnapshotCache[T]) Refresh(ctx context.Context) error {
 
 // RefreshAsync returns immediately with the current snapshot and kicks off a
 // background refresh only when the snapshot is missing or stale. If a refresh
-// is already in flight it is not duplicated. This gives stale-while-revalidate
-// semantics: callers never block on slow checks.
+// is already in flight it is not duplicated and the caller never waits on it:
+// TryLock keeps this truly non-blocking, so slow probes (e.g. unreachable
+// hosts burning their full timeout) can never stall API responses.
 func (c *SnapshotCache[T]) RefreshAsync(ctx context.Context) {
-	c.refreshMu.Lock()
+	if !c.refreshMu.TryLock() {
+		return
+	}
 	if c.isFresh() {
 		c.refreshMu.Unlock()
 		return
