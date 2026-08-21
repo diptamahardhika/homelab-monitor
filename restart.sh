@@ -29,6 +29,7 @@ docker run -d \
   --name "$CONTAINER" \
   -p 9876:9876 \
   -e AUTH_TOKEN="${AUTH_TOKEN:-}" \
+  -e REFRESH_INTERVAL="${REFRESH_INTERVAL:-}" \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PROJECT_DIR/data:/app/data" \
   "$IMAGE"

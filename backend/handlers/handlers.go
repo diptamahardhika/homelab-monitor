@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +17,30 @@ import (
 
 const (
 	defaultRefreshInterval  = 3 * time.Second
-	defaultCheckConcurrency = 6
+	defaultCheckConcurrency = 16
 )
+
+// refreshIntervalFromEnv reads REFRESH_INTERVAL (e.g. "1s", "500ms").
+// Unparsable or out-of-range values fall back to the 3s default; the floor
+// keeps the check loop from hammering remote hosts and the ceiling prevents
+// effectively disabling live refresh.
+func refreshIntervalFromEnv() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("REFRESH_INTERVAL"))
+	if raw == "" {
+		return defaultRefreshInterval
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return defaultRefreshInterval
+	}
+	if d < 500*time.Millisecond {
+		return 500 * time.Millisecond
+	}
+	if d > time.Minute {
+		return time.Minute
+	}
+	return d
+}
 
 // Build info is injected at build time via -ldflags.
 var (
@@ -63,7 +87,7 @@ func New(cfg *config.Config, dataPath string) *Handler {
 	h.loadExtraServices()
 	h.loadExtraServers()
 	h.sse = newSSEHub()
-	h.cache = monitor.NewSnapshotCache(defaultRefreshInterval, h.collectOverview)
+	h.cache = monitor.NewSnapshotCache(refreshIntervalFromEnv(), h.collectOverview)
 	h.cache.SetNotify(h.pushSnapshot)
 
 	depsPath := filepath.Join(dataDir, "dependencies.json")
@@ -93,6 +117,9 @@ func (h *Handler) Start(ctx context.Context) {
 	h.cache.Start(ctx)
 	h.history.Start(ctx)
 	h.systemHistory.Start(ctx)
+	// Container stats refresh on their own cadence so the overview cycle
+	// never waits on Docker's ~1s streaming stats calls.
+	monitor.StartContainerStatsCollector(ctx, h.cache.Interval())
 }
 
 func (h *Handler) collectOverview(ctx context.Context) (Overview, error) {

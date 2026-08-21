@@ -25,6 +25,11 @@ func NewSnapshotCache[T any](interval time.Duration, refresh func(context.Contex
 	return &SnapshotCache[T]{interval: interval, refresh: refresh}
 }
 
+// Interval reports the configured refresh cadence.
+func (c *SnapshotCache[T]) Interval() time.Duration {
+	return c.interval
+}
+
 // SetNotify registers a callback invoked (outside the cache lock) every time a
 // refresh produces a fresh snapshot. Used to push updates to SSE subscribers.
 func (c *SnapshotCache[T]) SetNotify(fn func(T)) {
@@ -60,6 +65,28 @@ func (c *SnapshotCache[T]) Refresh(ctx context.Context) error {
 	return c.refreshLocked(ctx)
 }
 
+// refreshForced runs the refresh unconditionally (still one at a time). The
+// background ticker uses this so the push cadence tracks the configured
+// interval instead of being stretched to 2x by the freshness gate.
+func (c *SnapshotCache[T]) refreshForced(ctx context.Context) error {
+	c.refreshMu.Lock()
+	defer c.refreshMu.Unlock()
+	return c.refreshLockedForced(ctx)
+}
+
+// refreshForcedAsync kicks off an unconditional refresh without waiting. A
+// tick that lands while another refresh is in flight is dropped, so slow
+// cycles never queue up back-to-back reruns.
+func (c *SnapshotCache[T]) refreshForcedAsync(ctx context.Context) {
+	if !c.refreshMu.TryLock() {
+		return
+	}
+	go func() {
+		defer c.refreshMu.Unlock()
+		_ = c.refreshLockedForced(ctx)
+	}()
+}
+
 // RefreshAsync returns immediately with the current snapshot and kicks off a
 // background refresh only when the snapshot is missing or stale. If a refresh
 // is already in flight it is not duplicated and the caller never waits on it:
@@ -87,7 +114,10 @@ func (c *SnapshotCache[T]) refreshLocked(ctx context.Context) error {
 	if c.isFresh() {
 		return nil
 	}
+	return c.refreshLockedForced(ctx)
+}
 
+func (c *SnapshotCache[T]) refreshLockedForced(ctx context.Context) error {
 	snapshot, err := c.refresh(ctx)
 	if err != nil {
 		return err
@@ -107,6 +137,8 @@ func (c *SnapshotCache[T]) refreshLocked(ctx context.Context) error {
 }
 
 // Start refreshes the snapshot immediately, then on interval until ctx ends.
+// Ticker refreshes are forced (not freshness-gated) so pushes land roughly
+// every interval; concurrent API-driven refreshes still dedupe via refreshMu.
 func (c *SnapshotCache[T]) Start(ctx context.Context) {
 	c.lifecycle = ctx
 	go func() {
@@ -118,7 +150,7 @@ func (c *SnapshotCache[T]) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = c.Refresh(ctx)
+				c.refreshForcedAsync(ctx)
 			}
 		}
 	}()
