@@ -40,3 +40,14 @@ export async function apiFetch(path, opts = {}) {
   }
   return res
 }
+
+// errorMessage extracts the server's `{error}` body from a failed response,
+// falling back to a generic message with the status code.
+export async function errorMessage(res, fallback) {
+  let msg = fallback || `Request failed (${res.status})`
+  try {
+    const data = await res.json()
+    if (data && data.error) msg = data.error
+  } catch (_) {}
+  return msg
+}
