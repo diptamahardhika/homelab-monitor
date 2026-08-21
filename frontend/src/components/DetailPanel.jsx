@@ -25,11 +25,12 @@ function MetricChart({ label, values, color, live, format, usage, domain }) {
 
 function SystemDetail({ stats }) {
   const [series, setSeries] = useState([])
+  const [range, setRange] = useState(24)
 
   useEffect(() => {
     let active = true
     const load = () => {
-      apiFetch('/api/system/history?hours=24')
+      apiFetch(`/api/system/history?hours=${range}`)
         .then(r => r.json())
         .then(d => { if (active && Array.isArray(d?.samples)) setSeries(d.samples) })
         .catch(() => {})
@@ -37,7 +38,7 @@ function SystemDetail({ stats }) {
     load()
     const id = setInterval(load, 60000)
     return () => { active = false; clearInterval(id) }
-  }, [])
+  }, [range])
 
   if (!stats) return null
 
@@ -51,7 +52,21 @@ function SystemDetail({ stats }) {
       <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 space-y-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Resource Trends</h3>
-          <span className="text-[10px] text-gray-400">last 24h · live</span>
+          <div className="flex items-center gap-1.5">
+            <select
+              value={range}
+              onChange={e => setRange(Number(e.target.value))}
+              className="text-[10px] text-gray-400 bg-transparent border-0 cursor-pointer hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none appearance-none"
+              aria-label="Trend time range"
+            >
+              {[1, 6, 12, 24].map(h => (
+                <option key={h} value={h} className="text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900">
+                  {h === 1 ? '1h' : `${h}h`}
+                </option>
+              ))}
+            </select>
+            <span className="text-[10px] text-gray-400">· live</span>
+          </div>
         </div>
         <MetricChart
           label="CPU"
