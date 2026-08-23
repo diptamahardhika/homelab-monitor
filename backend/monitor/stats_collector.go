@@ -66,9 +66,12 @@ func collectRunningStats(ctx context.Context) map[string]*ContainerStats {
 		}
 	}
 	out := make(map[string]*ContainerStats, len(ids))
+	outMu := sync.Mutex{}
 	_ = RunBounded(ctx, ids, 8, func(ctx context.Context, id string) error {
 		if st := GetContainerStats(ctx, id); st != nil {
+			outMu.Lock()
 			out[id] = st
+			outMu.Unlock()
 		}
 		return nil
 	})
