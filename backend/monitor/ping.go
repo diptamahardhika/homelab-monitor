@@ -7,17 +7,104 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/pradiptamahardika/homelab-monitor/config"
 )
+
+// magicDNSAddr is the Tailscale MagicDNS resolver. It only ever answers for
+// *.ts.net names; everything else falls through to the tailnet's configured
+// upstream resolvers.
+const magicDNSAddr = "100.100.100.100:53"
+
+// magicDNSBudget bounds the time spent probing MagicDNS for a single host. The
+// dial to 100.100.100.100 is cheap, but the follow-up lookup can stall for
+// hundreds of milliseconds when that address is filtered rather than refused.
+// Without a cap, a dead MagicDNS adds that stall to every check of every
+// *.ts.net service on every refresh cycle.
+const magicDNSBudget = 150 * time.Millisecond
+
+// tailnetResolver queries MagicDNS directly. Containers inherit the Docker
+// daemon's resolver (127.0.0.11 -> the daemon host's resolver), which does not
+// answer MagicDNS queries, so tailnet hosts must be resolved explicitly or
+// every check fails with "no such host" even though the peer is reachable.
+var tailnetResolver = &net.Resolver{
+	PreferGo: true,
+	Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		d := net.Dialer{Timeout: 2 * time.Second}
+		return d.DialContext(ctx, network, magicDNSAddr)
+	},
+}
+
+// isTailnetHost reports whether host is a MagicDNS name. Only these names get
+// the extra resolver lookup, so non-Tailscale deployments pay nothing.
+func isTailnetHost(host string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSuffix(host, ".")), ".ts.net")
+}
+
+// resolveTailnetHost resolves a *.ts.net host through MagicDNS. It returns ""
+// when host is not a tailnet name or MagicDNS is unreachable, so callers fall
+// back to normal DNS resolution.
+func resolveTailnetHost(ctx context.Context, host string) string {
+	if !isTailnetHost(host) {
+		return ""
+	}
+	// Bound the probe so an unreachable or filtered MagicDNS cannot add its
+	// full stall to every check. The parent ctx still wins if it expires first.
+	lookupCtx, cancel := context.WithTimeout(ctx, magicDNSBudget)
+	defer cancel()
+	ips, err := tailnetResolver.LookupHost(lookupCtx, host)
+	if err != nil {
+		return ""
+	}
+	for _, ip := range ips {
+		if parsed := net.ParseIP(ip); parsed != nil {
+			return ip
+		}
+	}
+	return ""
+}
+
+// firstResolvedIP returns an IP for host, preferring MagicDNS for tailnet
+// names. Used for the ResolvedIP display field.
+func firstResolvedIP(ctx context.Context, host string) string {
+	if ip := resolveTailnetHost(ctx, host); ip != "" {
+		return ip
+	}
+	if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
+		return ips[0]
+	}
+	return ""
+}
+
+// dialTCP dials addr, transparently resolving MagicDNS names through Tailscale
+// before handing the address to the system resolver.
+func dialTCP(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: timeout}
+	return tailnetDialer(dialer)(ctx, "tcp", addr)
+}
+
+// tailnetDialer wraps a dialer so *.ts.net hosts resolve via MagicDNS first.
+func tailnetDialer(dialer *net.Dialer) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return dialer.DialContext(ctx, network, addr)
+		}
+		if ip := resolveTailnetHost(ctx, host); ip != "" {
+			return dialer.DialContext(ctx, network, net.JoinHostPort(ip, port))
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
+}
 
 var (
 	// sharedTransport is reused by every check so connections are pooled and
 	// keep-alive across the 10s monitoring cycles instead of being re-created.
 	sharedTransport = &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:           tailnetDialer(&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}),
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   8,
 		IdleConnTimeout:       90 * time.Second,
@@ -28,7 +115,7 @@ var (
 	// insecureTransport is used only by checks with insecure_skip_verify set.
 	insecureTransport = &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		DialContext:           tailnetDialer(&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}),
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   8,
 		IdleConnTimeout:       90 * time.Second,
@@ -126,7 +213,7 @@ func CheckServer(ctx context.Context, srv config.Server, dialHost ...string) Ser
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	case "tcp":
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
+		conn, err := dialTCP(ctx, fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -138,7 +225,7 @@ func CheckServer(ctx context.Context, srv config.Server, dialHost ...string) Ser
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 	default:
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
+		conn, err := dialTCP(ctx, fmt.Sprintf("%s:%d", addr, srv.Port), parseTimeout(srv.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Alive = false
@@ -196,19 +283,15 @@ func CheckService(ctx context.Context, svc config.Service) ServiceStatus {
 		status.Latency = fmt.Sprintf("%dms", latency.Milliseconds())
 
 		if host := resp.Request.URL.Hostname(); host != "" {
-			if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
-				status.ResolvedIP = ips[0]
-			}
+			status.ResolvedIP = firstResolvedIP(ctx, host)
 		}
 
 	case "tcp":
 		host, _, err := net.SplitHostPort(svc.URL)
 		if err == nil {
-			if ips, err := net.LookupHost(host); err == nil && len(ips) > 0 {
-				status.ResolvedIP = ips[0]
-			}
+			status.ResolvedIP = firstResolvedIP(ctx, host)
 		}
-		conn, err := net.DialTimeout("tcp", svc.URL, parseTimeout(svc.Timeout, 5*time.Second))
+		conn, err := dialTCP(ctx, svc.URL, parseTimeout(svc.Timeout, 5*time.Second))
 		latency := time.Since(start)
 		if err != nil {
 			status.Status = "down"

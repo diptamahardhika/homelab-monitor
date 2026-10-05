@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -181,6 +182,80 @@ func TestCheckServiceTimeout(t *testing.T) {
 	})
 	if status.Status == "up" {
 		t.Fatalf("expected slow service to time out, got up")
+	}
+}
+
+func TestIsTailnetHost(t *testing.T) {
+	cases := map[string]bool{
+		"umbrel-7070.flamingo-justitia.ts.net":  true,
+		"UMBREL-7070.FLAMINGO-JUSTITIA.TS.NET":  true,
+		"umbrel-7070.flamingo-justitia.ts.net.": true,
+		"p15-wsl.flamingo-justitia.ts.net":      true,
+		"uptimekuma.diptamahardhika.cloud":      false,
+		"example.com":                           false,
+		"host.docker.internal":                  false,
+		"ts.net":                                false,
+		"notts.net.evil.com":                    false,
+		"":                                      false,
+	}
+	for host, want := range cases {
+		if got := isTailnetHost(host); got != want {
+			t.Errorf("isTailnetHost(%q) = %v, want %v", host, got, want)
+		}
+	}
+}
+
+func TestResolveTailnetHostSkipsNonTailnetNames(t *testing.T) {
+	// A non-tailnet host must never hit the MagicDNS resolver, so this stays
+	// fast and works on machines without Tailscale installed.
+	if ip := resolveTailnetHost(context.Background(), "example.com"); ip != "" {
+		t.Fatalf("expected no MagicDNS lookup for example.com, got %s", ip)
+	}
+	if ip := resolveTailnetHost(context.Background(), "host.docker.internal"); ip != "" {
+		t.Fatalf("expected no MagicDNS lookup for host.docker.internal, got %s", ip)
+	}
+}
+
+// TestMagicDNSFallsBackGracefully pins the fallback contract: when MagicDNS is
+// unreachable (no Tailscale, or the resolver is blocked), checks must still run
+// through normal DNS instead of erroring out.
+func TestMagicDNSFallsBackGracefully(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	ip := resolveTailnetHost(ctx, "definitely-not-a-real-host.flamingo-justitia.ts.net")
+	if ip != "" {
+		t.Fatalf("expected empty resolution for nonexistent host, got %s", ip)
+	}
+}
+
+func TestCheckServiceTCPUsesResolvedHost(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+
+	port := listener.Addr().(*net.TCPAddr).Port
+	status := CheckService(context.Background(), config.Service{
+		Name: "tcp",
+		URL:  fmt.Sprintf("127.0.0.1:%d", port),
+		Type: "tcp",
+	})
+	if status.Status != "up" {
+		t.Fatalf("expected tcp service up, got %s: %s", status.Status, status.Error)
+	}
+	if status.ResolvedIP == "" {
+		t.Fatal("expected ResolvedIP to be populated for tcp service")
 	}
 }
 
